@@ -117,8 +117,6 @@ publishing {
             groupId = project.group.toString()
             artifactId = base.archivesName.get()
             version = project.version.toString()
-            artifact(tasks.named("sourcesJar"))
-            artifact(tasks.named("javadocJar"))
             artifact(tasks.named("dokkaJar"))
             pom {
                 name = projectName

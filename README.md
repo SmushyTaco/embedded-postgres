@@ -1,4 +1,7 @@
 # Embedded Postgres
+[![Maven Central](https://img.shields.io/maven-central/v/com.smushytaco/embedded-postgres.svg?label=maven%20central)](https://central.sonatype.com/artifact/com.smushytaco/embedded-postgres)
+[![Dokka Docs](https://img.shields.io/badge/docs-dokka-brightgreen.svg)](https://smushytaco.github.io/embedded-postgres)
+[![Javadocs](https://javadoc.io/badge2/com.smushytaco/embedded-postgres/javadoc.svg)](https://javadoc.io/doc/com.smushytaco/embedded-postgres)
 
 ## Introduction
 
