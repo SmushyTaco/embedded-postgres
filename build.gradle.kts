@@ -1,15 +1,11 @@
-import enforcer.rules.DependencyConvergence
-import org.apache.tools.ant.taskdefs.condition.Os
-
 plugins {
     `java-library`
     `maven-publish`
     signing
-    pmd
+    id("org.jetbrains.dokka")
     id("dev.yumi.gradle.licenser")
+    id("co.uzzu.dotenv.gradle")
     id("com.gradleup.nmcp")
-    id("de.aaschmid.cpd")
-    id("org.kordamp.gradle.project-enforcer")
 }
 
 val projectName = providers.gradleProperty("name")
@@ -24,23 +20,26 @@ val commonsCompressVersion = providers.gradleProperty("commons_compress_version"
 val commonsIoVersion = providers.gradleProperty("commons_io_version")
 val commonsLang3Version = providers.gradleProperty("commons_lang3_version")
 val flywayVersion = providers.gradleProperty("flyway_version")
-val junit4Version = providers.gradleProperty("junit4_version")
-val junit5Version = providers.gradleProperty("junit5_version")
+val junitVersion = providers.gradleProperty("junit_version")
 val liquibaseVersion = providers.gradleProperty("liquibase_version")
 val mockitoVersion = providers.gradleProperty("mockito_version")
-val pmdVersion = providers.gradleProperty("pmd_version")
 val postgresqlVersion = providers.gradleProperty("postgresql_version")
 val slf4jVersion = providers.gradleProperty("slf4j_version")
 val xzVersion = providers.gradleProperty("xz_version")
+val dokkaVersion = providers.gradleProperty("dokka_version")
+val projectDescription = "Embedded PostgreSQL Server"
 
-description = "Embedded PostgreSQL Server"
+description = projectDescription
 base.archivesName = projectName.get()
 group = projectGroup.get()
 version = projectVersion.get()
 
 repositories { mavenCentral() }
 
+val mockitoAgent by configurations.creating
 dependencies {
+    dokkaPlugin("org.jetbrains.dokka:kotlin-as-java-plugin:${dokkaVersion.get()}")
+
     runtimeOnly("io.zonky.test.postgres:embedded-postgres-binaries-windows-amd64:${embeddedPostgresBinariesVersion.get()}")
     runtimeOnly("io.zonky.test.postgres:embedded-postgres-binaries-darwin-amd64:${embeddedPostgresBinariesVersion.get()}")
     runtimeOnly("io.zonky.test.postgres:embedded-postgres-binaries-linux-amd64:${embeddedPostgresBinariesVersion.get()}")
@@ -54,23 +53,22 @@ dependencies {
     implementation("commons-codec:commons-codec:${commonsCodecVersion.get()}")
     implementation("org.postgresql:postgresql:${postgresqlVersion.get()}")
 
-    compileOnly("org.flywaydb:flyway-core:${flywayVersion.get()}")
+    compileOnly("org.flywaydb:flyway-database-postgresql:${flywayVersion.get()}")
     compileOnly("org.liquibase:liquibase-core:${liquibaseVersion.get()}")
-    compileOnly("junit:junit:${junit4Version.get()}")
-    compileOnly("org.junit.jupiter:junit-jupiter-api:${junit5Version.get()}")
+    compileOnly("org.junit.jupiter:junit-jupiter-api:${junitVersion.get()}")
 
-    testImplementation("org.flywaydb:flyway-core:${flywayVersion.get()}")
+    testImplementation("org.flywaydb:flyway-database-postgresql:${flywayVersion.get()}")
     testImplementation("org.liquibase:liquibase-core:${liquibaseVersion.get()}")
-    testImplementation(platform("org.junit:junit-bom:${junit5Version.get()}"))
+    testImplementation(platform("org.junit:junit-bom:${junitVersion.get()}"))
     testImplementation("org.junit.jupiter:junit-jupiter")
-    testImplementation("junit:junit:${junit4Version.get()}")
     testImplementation("org.mockito:mockito-core:${mockitoVersion.get()}")
+
+    mockitoAgent("org.mockito:mockito-core:${mockitoVersion.get()}") { isTransitive = false }
 
     testRuntimeOnly("org.junit.vintage:junit-vintage-engine")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testRuntimeOnly("org.slf4j:slf4j-simple:${slf4jVersion.get()}")
 }
-
 java {
     toolchain.languageVersion = JavaLanguageVersion.of(javaVersion.get())
     sourceCompatibility = JavaVersion.toVersion(javaVersion.get().toInt())
@@ -78,45 +76,34 @@ java {
     withSourcesJar()
     withJavadocJar()
 }
+abstract class MockitoAgentArgs @Inject constructor(objects: ObjectFactory) : CommandLineArgumentProvider {
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    val agentFiles: ConfigurableFileCollection = objects.fileCollection()
+    override fun asArguments(): Iterable<String> = agentFiles.files.map { "-javaagent:${it.absolutePath}" }
+}
 tasks {
     withType<JavaCompile>().configureEach {
         options.encoding = "UTF-8"
-        options.compilerArgs.add("-Xlint:deprecation")
         sourceCompatibility = javaVersion.get()
         targetCompatibility = javaVersion.get()
-        if (javaVersion.get().toInt() > 8) options.release = javaVersion.get().toInt()
-    }
-    withType<Javadoc>().configureEach {
-        options.encoding = "UTF-8"
-        val standardOptions = options as StandardJavadocDocletOptions
-        standardOptions.addStringOption("Xdoclint:none", "-quiet")
+        options.release = javaVersion.get().toInt()
     }
     withType<JavaExec>().configureEach { defaultCharacterEncoding = "UTF-8" }
+    withType<Javadoc>().configureEach { options.encoding = "UTF-8" }
     withType<Test>().configureEach {
+        val provider = objects.newInstance(MockitoAgentArgs::class.java).apply { agentFiles.from(mockitoAgent) }
+        jvmArgumentProviders.add(provider)
         defaultCharacterEncoding = "UTF-8"
         useJUnitPlatform()
-        if (!Os.isFamily(Os.FAMILY_WINDOWS)) environment("LC_ALL", System.getenv("LC_ALL") ?: "en_US.UTF-8")
     }
-    named("check") { dependsOn("cpdCheck") }
-}
-pmd {
-    toolVersion = pmdVersion.get()
-    isConsoleOutput = true
-    isIgnoreFailures = false
-    rulesMinimumPriority = 4
-}
-cpd {
-    toolVersion = pmdVersion.get()
-    isIgnoreFailures = true
-    minimumTokenCount = 100
-    encoding = "UTF-8"
-}
-enforce {
-    rule(DependencyConvergence::class.java) {
-        failOnDynamicVersions = true
-        failOnChangingVersions = true
-        failOnNonReproducibleResolution = true
+    register<Jar>("dokkaJar") {
+        group = JavaBasePlugin.DOCUMENTATION_GROUP
+        dependsOn(dokkaGenerateHtml)
+        archiveClassifier = "dokka"
+        from(layout.buildDirectory.dir("dokka/html"))
     }
+    named("build") { dependsOn(named("dokkaJar")) }
 }
 license {
     rule(file("./HEADER"))
@@ -130,10 +117,13 @@ publishing {
             groupId = project.group.toString()
             artifactId = base.archivesName.get()
             version = project.version.toString()
+            artifact(tasks.named("sourcesJar"))
+            artifact(tasks.named("javadocJar"))
+            artifact(tasks.named("dokkaJar"))
             pom {
                 name = projectName
-                description = project.description
-                url = "https://github.com/zonkyio/embedded-postgres"
+                description = projectDescription
+                url = "https://github.com/SmushyTaco/embedded-postgres"
 
                 licenses {
                     license {
@@ -144,38 +134,35 @@ publishing {
                 }
                 developers {
                     developer {
-                        name = "Tomas Vanek"
-                        email = "tomix26@gmail.com"
-                    }
-                    developer {
-                        name = "Zonky Developers"
-                        email = "developers@zonky.cz"
+                        id = "smushytaco"
+                        name = "Nikan Radan"
+                        email = "personal@nikanradan.com"
                     }
                 }
                 scm {
-                    url = "https://github.com/zonkyio/embedded-postgres"
-                    connection = "scm:git:https://github.com/zonkyio/embedded-postgres.git"
-                    developerConnection = "scm:git:https://github.com/zonkyio/embedded-postgres.git"
-                    tag = "HEAD"
+                    url = "https://github.com/SmushyTaco/embedded-postgres"
+                    connection = "scm:git:https://github.com/SmushyTaco/embedded-postgres.git"
+                    developerConnection = "scm:git:https://github.com/SmushyTaco/embedded-postgres.git"
                 }
             }
         }
     }
 }
 signing {
-    val signingKey = System.getenv("MAVEN_SIGNING_KEY")
-    val signingPassphrase = System.getenv("MAVEN_SIGNING_PASSPHRASE")
-    if (!signingKey.isNullOrBlank()) {
+    val keyFile = layout.projectDirectory.file("./private-key.asc")
+    if (keyFile.asFile.exists()) {
         isRequired = true
-        useInMemoryPgpKeys(signingKey, signingPassphrase)
+        useInMemoryPgpKeys(
+            providers.fileContents(keyFile).asText.get(),
+            env.fetch("PASSPHRASE", "")
+        )
         sign(publishing.publications)
-    } else {
-        isRequired = false
     }
 }
 nmcp {
     publishAllPublicationsToCentralPortal {
-        username = System.getenv("USERNAME_TOKEN") ?: ""
-        password = System.getenv("PASSWORD_TOKEN") ?: ""
+        username = env.fetch("USERNAME_TOKEN", "")
+        password = env.fetch("PASSWORD_TOKEN", "")
+        publishingType = "USER_MANAGED"
     }
 }

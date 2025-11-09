@@ -1,0 +1,45 @@
+/*
+ * Copyright 2025 Nikan Radan
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package com.smushytaco.postgres.embedded;
+
+import javax.sql.DataSource;
+import java.sql.SQLException;
+
+/**
+ * A DatabasePreparer applies an arbitrary set of changes
+ * (e.g. database migrations, user creation) to a database
+ * before it is presented to the user.
+ * <p>
+ * The preparation steps are expected to be deterministic.
+ * For efficiency reasons, databases created by DatabasePreparer
+ * instances may be pooled, using {@link Object#hashCode()} and
+ * {@link Object#equals(Object)} to determine equivalence.
+ */
+public interface DatabasePreparer {
+    /**
+     * Applies the preparation logic to the specified {@link DataSource}.
+     * <p>
+     * Implementations may execute migrations, create users, or perform other
+     * deterministic setup steps required before the database is made available
+     * for use. The {@link DataSource} will provide a connection to the target
+     * database on which these operations should be performed.
+     *
+     * @param ds the {@link DataSource} representing the target database
+     * @throws SQLException if a database access error occurs during preparation
+     */
+    void prepare(DataSource ds) throws SQLException;
+}

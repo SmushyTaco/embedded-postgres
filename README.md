@@ -1,15 +1,15 @@
-# <img src="zonky.jpg" height="100"> Embedded Postgres
+# Embedded Postgres
 
 ## Introduction
 
-This project is a fork of [OpenTable Embedded PostgreSQL Component](https://github.com/opentable/otj-pg-embedded) created back in 2018. The original
+This project is a fork of [Zonkyio Embedded PostgreSQL](https://github.com/zonkyio/embedded-postgres) which is a fork of [OpenTable Embedded PostgreSQL Component](https://github.com/opentable/otj-pg-embedded) created back in 2018. The original
 project continues, but with a very different philosophy - wrapping the postgres instance in a docker container.
 Whereas this project follows the original approach of using native postgres binaries running directly on the target platform without the overhead of virtualization.
 
+This fork also differs from the Zonkyio fork in the sense that it depends on the latest LTS version of Java, migrates from the legacy `File` to the modern `Path`, has full javadoc coverage, and drops legacy JUnit 4 support. Think of this as a comprehensive modernization.
+
 The library allows embedding PostgreSQL into Java application code with no external dependencies.
 Excellent for allowing you to unit test with a "real" Postgres without requiring end users to install and set up a database cluster.
-
-If you are using `Spring` or `Spring Boot` framework you can also consider using the following more specialized [embedded-database-spring-test](https://github.com/zonkyio/embedded-database-spring-test) project.
 
 ## Features
 
@@ -18,33 +18,36 @@ If you are using `Spring` or `Spring Boot` framework you can also consider using
 * PostgreSQL 11+ support even for Linux platform
 * Support for running inside Docker, including Alpine Linux
 
-## Maven Configuration
+## Gradle Configuration
 
-Add the following Maven dependency:
 
-```xml
-<dependency>
-    <groupId>io.zonky.test</groupId>
-    <artifactId>embedded-postgres</artifactId>
-    <version>2.1.1</version>
-    <scope>test</scope>
-</dependency>
+To use this with Gradle, add the following to your `build.gradle.kts`:
+```kotlin
+val embeddedPostgresVersion = providers.gradleProperty("embedded_postgres_version")
+dependencies {
+    testImplementation("com.smushytaco:embedded-postgres:${embeddedPostgresVersion.get()}")
+}
+```
+And the following to your `gradle.properties`:
+```properties
+# Check this on https://central.sonatype.com/artifact/com.smushytaco/embedded-postgres/
+embedded_postgres_version = 3.0.0
 ```
 
-The default version of the embedded postgres is `PostgreSQL 14.19`, but you can change it by following the instructions described in [Postgres version](#postgres-version).
+The default version of the embedded postgres is `PostgreSQL 18.0.0`, but you can change it by following the instructions described in [Postgres version](#postgres-version).
 
 ## Basic Usage
 
 In your JUnit test just add:
 
 ```java
-@Rule
-public SingleInstancePostgresRule pg = EmbeddedPostgresRules.singleInstance();
+@RegisterExtension
+SingleInstancePostgresExtension pg = EmbeddedPostgresExtension.singleInstance();
 ```
 
 This simply has JUnit manage an instance of EmbeddedPostgres (start, stop). You can then use this to get a DataSource with: `pg.getEmbeddedPostgres().getPostgresDatabase();`  
 
-Additionally you may use the [`EmbeddedPostgres`](src/main/java/io/zonky/test/db/postgres/embedded/EmbeddedPostgres.java) class directly by manually starting and stopping the instance; see [`EmbeddedPostgresTest`](src/test/java/io/zonky/test/db/postgres/embedded/EmbeddedPostgresTest.java) for an example.
+Additionally, you may use the [`EmbeddedPostgres`](src/main/java/com/smushytaco/postgres/embedded/EmbeddedPostgres.java) class directly by manually starting and stopping the instance; see [`EmbeddedPostgresTest`](src/test/java/com/smushytaco/postgres/embedded/EmbeddedPostgresTest.java) for an example.
 
 Default username/password is: postgres/postgres and the default database is 'postgres'
 
@@ -53,18 +56,14 @@ Default username/password is: postgres/postgres and the default database is 'pos
 You can easily integrate Flyway or Liquibase database schema migration:
 ##### Flyway
 ```java
-@Rule 
-public PreparedDbRule db =
-    EmbeddedPostgresRules.preparedDatabase(
-        FlywayPreparer.forClasspathLocation("db/my-db-schema"));
+@RegisterExtension
+PreparedDbExtension db = EmbeddedPostgresExtension.preparedDatabase(FlywayPreparer.forClasspathLocation("db/my-db-schema"));
 ```
 
 ##### Liquibase
 ```java
-@Rule
-public PreparedDbRule db = 
-    EmbeddedPostgresRules.preparedDatabase(
-            LiquibasePreparer.forClasspathLocation("liqui/master.xml"));
+@RegisterExtension
+PreparedDbExtension db = EmbeddedPostgresExtension.preparedDatabase(LiquibasePreparer.forClasspathLocation("liqui/master.xml"));
 ```
 
 This will create an independent database for every test with the given schema loaded from the classpath.
@@ -73,78 +72,41 @@ independent databases gives you.
 
 ## Postgres version
 
-The default version of the embedded postgres is `PostgreSQL 14.19`, but it can be changed by importing `embedded-postgres-binaries-bom` in a required version into your dependency management section.
+The default version of the embedded postgres is `PostgreSQL 18.0.0`, but it can be changed by importing `embedded-postgres-binaries-bom`.
 
-```xml
-<dependencyManagement>
-    <dependencies>
-        <dependency>
-            <groupId>io.zonky.test.postgres</groupId>
-            <artifactId>embedded-postgres-binaries-bom</artifactId>
-            <version>17.6.0</version>
-            <type>pom</type>
-            <scope>import</scope>
-        </dependency>
-    </dependencies>
-</dependencyManagement>
+Add the following to your `build.gradle.kts`;
+```kotlin
+val postgresqlVersion = providers.gradleProperty("postgresql_version")
+dependencies {
+    testImplementation(enforcedPlatform("io.zonky.test.postgres:embedded-postgres-binaries-bom:${postgresqlVersion.get()}"))
+}
 ```
 
-<details>
-  <summary>Using Maven BOMs in Gradle</summary>
-  
-  In Gradle, there are several ways how to import a Maven BOM.
-  
-  1. You can define a resolution strategy to check and change the version of transitive dependencies manually:
-  
-         configurations.all {
-              resolutionStrategy.eachDependency { DependencyResolveDetails details ->
-                  if (details.requested.group == 'io.zonky.test.postgres') {
-                     details.useVersion '17.6.0'
-                 }
-             }
-         }
-  
-  2. If you use Gradle 5+, [Maven BOMs are supported out of the box](https://docs.gradle.org/5.0/userguide/managing_transitive_dependencies.html#sec:bom_import), so you can import the bom:
-  
-         dependencies {
-              testImplementation enforcedPlatform('io.zonky.test.postgres:embedded-postgres-binaries-bom:17.6.0')
-         }
-  
-  3. Or, you can use [Spring's dependency management plugin](https://docs.spring.io/dependency-management-plugin/docs/current/reference/html/#dependency-management-configuration-bom-import) that provides Maven-like dependency management to Gradle:
-  
-         plugins {
-             id "io.spring.dependency-management" version "1.1.0"
-         }
-         
-         dependencyManagement {
-              imports {
-                   mavenBom 'io.zonky.test.postgres:embedded-postgres-binaries-bom:17.6.0'
-              }
-         }
+And the following to your `gradle.properties`:
+```properties
+# Check this on https://central.sonatype.com/artifact/io.zonky.test.postgres/embedded-postgres-binaries-bom/
+postgresql_version = 18.0.0
+```
 
-</details><br/>
-
-A list of all available versions of postgres binaries is here: https://mvnrepository.com/artifact/io.zonky.test.postgres/embedded-postgres-binaries-bom
+A list of all available versions of postgres binaries can be found [here](https://central.sonatype.com/artifact/io.zonky.test.postgres/embedded-postgres-binaries-bom/).
 
 Note that the release cycle of the postgres binaries is independent of the release cycle of this library, so you can upgrade to a new version of postgres binaries immediately after it is released.
 
 ## Additional architectures
 
 By default, only the support for `amd64` architecture is enabled.
-Support for other architectures can be enabled by adding the corresponding Maven dependencies as shown in the example below.
+Support for other architectures can be enabled by adding the corresponding Maven dependencies as shown in the example below:
 
-```xml
-<dependency>
-    <groupId>io.zonky.test.postgres</groupId>
-    <artifactId>embedded-postgres-binaries-linux-i386</artifactId>
-    <scope>test</scope>
-</dependency>
+```kotlin
+dependencies {
+    testImplementation("io.zonky.test.postgres:embedded-postgres-binaries-linux-i386")
+}
 ```
 
 **Supported platforms:** `Darwin`, `Windows`, `Linux`, `Alpine Linux`  
 **Supported architectures:** `amd64`, `i386`, `arm32v6`, `arm32v7`, `arm64v8`, `ppc64le`
 
-Note that not all architectures are supported by all platforms, look here for an exhaustive list of all available artifacts: https://mvnrepository.com/artifact/io.zonky.test.postgres
+Note that not all architectures are supported by all platforms, look [here](https://central.sonatype.com/namespace/io.zonky.test.postgres/) for an exhaustive list of all available artifacts.
   
 Since `PostgreSQL 10.0`, there are additional artifacts with `alpine-lite` suffix. These artifacts contain postgres binaries for Alpine Linux with disabled [ICU support](https://blog.2ndquadrant.com/icu-support-postgresql-10/) for further size reduction.
 
@@ -216,4 +178,4 @@ Below are some examples of how to prepare a docker image running with a non-root
 If the above do not resolve your error, verify that the correct locales are available in your container. For example, many variants of AlmaLinux:9 do not come with `glibc-langpack-en`. This will lead to misleading errors during `initdb`. Additionally, you can optionally set your locale with `setLocaleConfig()` when building your EmbeddedPostgres instance.
 
 ## License
-The project is released under version 2.0 of the [Apache License](http://www.apache.org/licenses/LICENSE-2.0.html).
+The project is released under version 2.0 of the [Apache License](https://www.apache.org/licenses/LICENSE-2.0).

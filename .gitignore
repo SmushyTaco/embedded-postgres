@@ -21,3 +21,6 @@ dist/
 build/
 out/
 classes/
+.PVS-Studio
+.env
+private-key.asc
