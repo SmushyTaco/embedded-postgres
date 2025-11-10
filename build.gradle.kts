@@ -15,10 +15,7 @@ val projectVersion = providers.gradleProperty("version")
 val javaVersion = providers.gradleProperty("java_version")
 
 val embeddedPostgresBinariesVersion = providers.gradleProperty("embedded_postgres_binaries_version")
-val commonsCodecVersion = providers.gradleProperty("commons_codec_version")
 val commonsCompressVersion = providers.gradleProperty("commons_compress_version")
-val commonsIoVersion = providers.gradleProperty("commons_io_version")
-val commonsLang3Version = providers.gradleProperty("commons_lang3_version")
 val flywayVersion = providers.gradleProperty("flyway_version")
 val junitVersion = providers.gradleProperty("junit_version")
 val liquibaseVersion = providers.gradleProperty("liquibase_version")
@@ -46,11 +43,8 @@ dependencies {
     runtimeOnly("io.zonky.test.postgres:embedded-postgres-binaries-linux-amd64-alpine:${embeddedPostgresBinariesVersion.get()}")
 
     implementation("org.slf4j:slf4j-api:${slf4jVersion.get()}")
-    implementation("org.apache.commons:commons-lang3:${commonsLang3Version.get()}")
     implementation("org.apache.commons:commons-compress:${commonsCompressVersion.get()}")
     implementation("org.tukaani:xz:${xzVersion.get()}")
-    implementation("commons-io:commons-io:${commonsIoVersion.get()}")
-    implementation("commons-codec:commons-codec:${commonsCodecVersion.get()}")
     implementation("org.postgresql:postgresql:${postgresqlVersion.get()}")
 
     compileOnly("org.flywaydb:flyway-database-postgresql:${flywayVersion.get()}")
@@ -65,7 +59,6 @@ dependencies {
 
     mockitoAgent("org.mockito:mockito-core:${mockitoVersion.get()}") { isTransitive = false }
 
-    testRuntimeOnly("org.junit.vintage:junit-vintage-engine")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testRuntimeOnly("org.slf4j:slf4j-simple:${slf4jVersion.get()}")
 }

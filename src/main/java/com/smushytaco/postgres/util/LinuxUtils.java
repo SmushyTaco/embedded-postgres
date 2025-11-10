@@ -16,8 +16,6 @@
 
 package com.smushytaco.postgres.util;
 
-import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.SystemUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -29,6 +27,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Locale;
 import java.util.Objects;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -44,6 +43,8 @@ import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
 public final class LinuxUtils {
 
     private static final Logger logger = LoggerFactory.getLogger(LinuxUtils.class);
+
+    private static final boolean IS_LINUX = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("linux");
 
     private static final String DISTRIBUTION_NAME = resolveDistributionName();
     private static final boolean UNSHARE_AVAILABLE = unshareAvailable();
@@ -78,7 +79,7 @@ public final class LinuxUtils {
     }
 
     private static String resolveDistributionName() {
-        if (!SystemUtils.IS_OS_LINUX) {
+        if (!IS_LINUX) {
             return null;
         }
 
@@ -105,7 +106,7 @@ public final class LinuxUtils {
                 distributionName = outputReader.readLine();
             }
 
-            if (StringUtils.isBlank(distributionName)) {
+            if (distributionName == null || distributionName.isBlank()) {
                 logger.warn("It's not possible to detect the name of the Linux distribution, the detection script returned empty output");
                 return null;
             }
@@ -129,7 +130,7 @@ public final class LinuxUtils {
     }
 
     private static boolean unshareAvailable() {
-        if (!SystemUtils.IS_OS_LINUX) {
+        if (!IS_LINUX) {
             return false;
         }
 

@@ -9,7 +9,7 @@ This project is a fork of [Zonkyio Embedded PostgreSQL](https://github.com/zonky
 project continues, but with a very different philosophy - wrapping the postgres instance in a docker container.
 Whereas this project follows the original approach of using native postgres binaries running directly on the target platform without the overhead of virtualization.
 
-This fork also differs from the Zonkyio fork in the sense that it depends on the latest LTS version of Java, migrates from the legacy `File` to the modern `Path`, has full javadoc coverage, and drops legacy JUnit 4 support. Think of this as a comprehensive modernization.
+This fork also differs from the Zonkyio fork in the sense that it depends on the latest LTS version of Java, migrates from the legacy `File` to the modern `Path`, has full javadoc coverage, drops no longer needed dependencies, and drops legacy JUnit 4 support. Think of this as a comprehensive modernization.
 
 The library allows embedding PostgreSQL into Java application code with no external dependencies.
 Excellent for allowing you to unit test with a "real" Postgres without requiring end users to install and set up a database cluster.
@@ -34,7 +34,7 @@ dependencies {
 And the following to your `gradle.properties`:
 ```properties
 # Check this on https://central.sonatype.com/artifact/com.smushytaco/embedded-postgres/
-embedded_postgres_version = 3.0.0
+embedded_postgres_version = 3.0.1
 ```
 
 The default version of the embedded postgres is `PostgreSQL 18.0.0`, but you can change it by following the instructions described in [Postgres version](#postgres-version).
@@ -117,9 +117,7 @@ Since `PostgreSQL 10.0`, there are additional artifacts with `alpine-lite` suffi
 
 ### Process [/tmp/embedded-pg/PG-XYZ/bin/initdb, ...] failed
 
-Check the console output for an `initdb: cannot be run as root` message. If the error is present, try to upgrade to a newer version of the library (1.2.8+), or ensure the build process to be running as a non-root user.
-
-If the error is not present, try to clean up the `/tmp/embedded-pg/PG-XYZ` directory containing temporary binaries of the embedded database. 
+Try to clean up the `/tmp/embedded-pg/PG-XYZ` directory containing temporary binaries of the embedded database. 
 
 ### Running tests on Windows does not work
 
@@ -128,8 +126,6 @@ You probably need to install [Microsoft Visual C++ 2013 Redistributable Package]
 ### Running tests in Docker does not work
 
 Running builds inside a Docker container is fully supported, including Alpine Linux. However, PostgreSQL has a restriction the database process must run under a non-root user. Otherwise, the database does not start and fails with an error.  
-
-So be sure to use a docker image that uses a non-root user. Or, since version `1.2.8` you can run the docker container with `--privileged` option, which allows taking advantage of `unshare` command to run the database process in a separate namespace.
 
 Below are some examples of how to prepare a docker image running with a non-root user:
 

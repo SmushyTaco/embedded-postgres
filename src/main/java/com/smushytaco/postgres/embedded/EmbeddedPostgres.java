@@ -17,14 +17,9 @@
 package com.smushytaco.postgres.embedded;
 
 import com.smushytaco.postgres.util.LinuxUtils;
-import org.apache.commons.codec.binary.Hex;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
-import org.apache.commons.io.IOUtils;
-import org.apache.commons.io.file.PathUtils;
-import org.apache.commons.io.output.ByteArrayOutputStream;
-import org.apache.commons.lang3.SystemUtils;
-import org.apache.commons.lang3.time.StopWatch;
+import org.jspecify.annotations.NonNull;
 import org.postgresql.ds.PGSimpleDataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,15 +31,13 @@ import java.net.ServerSocket;
 import java.nio.ByteBuffer;
 import java.nio.channels.*;
 import java.nio.file.*;
-import java.nio.file.attribute.DosFileAttributeView;
-import java.nio.file.attribute.FileTime;
-import java.nio.file.attribute.PosixFileAttributeView;
-import java.nio.file.attribute.PosixFilePermission;
+import java.nio.file.attribute.*;
 import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.sql.SQLException;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.*;
 import java.util.Map.Entry;
 import java.util.concurrent.Phaser;
@@ -268,21 +261,30 @@ public class EmbeddedPostgres implements Closeable {
         }
     }
 
+    private static String formatElapsedSince(Instant instant) {
+        Duration duration = Duration.between(instant, Instant.now());
+        long hours = duration.toHours();
+        long minutes = duration.toMinutesPart();
+        long seconds = duration.toSecondsPart();
+        long millis = duration.toMillisPart();
+        return String.format("%02d:%02d:%02d.%03d", hours, minutes, seconds, millis);
+    }
+
     private void initdb() {
-        final StopWatch watch = new StopWatch();
-        watch.start();
+        Instant start = Instant.now();
         List<String> args = new ArrayList<>();
         args.addAll(Arrays.asList(
                 "-A", "trust", "-U", PG_SUPERUSER,
                 "-D", dataDirectory.toString(), "-E", "UTF-8"));
         args.addAll(createLocaleOptions());
         system(initDb, args, null);
-        LOG.info("{} initdb completed in {}", instanceId, watch);
+        if (LOG.isInfoEnabled()) {
+            LOG.info("{} initdb completed in {}", instanceId, formatElapsedSince(start));
+        }
     }
 
     private void startPostmaster() {
-        final StopWatch watch = new StopWatch();
-        watch.start();
+        Instant start = Instant.now();
         if (started.getAndSet(true)) {
             throw new IllegalStateException("Postmaster already started");
         }
@@ -297,8 +299,9 @@ public class EmbeddedPostgres implements Closeable {
 
         system(pgCtl, args, pgStartupWait);
 
-        watch.stop();
-        LOG.info("{} postmaster startup finished in {}", instanceId, watch);
+        if (LOG.isInfoEnabled()) {
+            LOG.info("{} postmaster startup finished in {}", instanceId, formatElapsedSince(start));
+        }
     }
 
     private List<String> createInitOptions() {
@@ -334,16 +337,35 @@ public class EmbeddedPostgres implements Closeable {
         return closeThread;
     }
 
+    private static void deleteDirectoryRecursively(Path dir) throws IOException {
+        if (Files.notExists(dir)) return;
+        Files.walkFileTree(dir, new SimpleFileVisitor<>() {
+            @Override
+            public @NonNull FileVisitResult visitFile(@NonNull Path file, @NonNull BasicFileAttributes attrs) throws IOException {
+                Files.delete(file);
+                return FileVisitResult.CONTINUE;
+            }
+            @Override
+            public @NonNull FileVisitResult postVisitDirectory(@NonNull Path directory, IOException exc) throws IOException {
+                if (exc != null) throw exc;
+                Files.delete(directory);
+                return FileVisitResult.CONTINUE;
+            }
+        });
+    }
+
+
     @Override
     public void close() throws IOException {
         if (closed.getAndSet(true)) {
             return;
         }
-        final StopWatch watch = new StopWatch();
-        watch.start();
+        Instant start = Instant.now();
         try {
             pgCtl(dataDirectory, "stop");
-            LOG.info("{} shut down postmaster in {}", instanceId, watch);
+            if (LOG.isInfoEnabled()) {
+                LOG.info("{} shut down postmaster in {}", instanceId, formatElapsedSince(start));
+            }
         } catch (final Exception e) {
             LOG.error("Could not stop postmaster {}", instanceId, e);
         }
@@ -360,7 +382,7 @@ public class EmbeddedPostgres implements Closeable {
 
         if (cleanDataDirectory && System.getProperty("ot.epg.no-cleanup") == null) {
             try {
-                PathUtils.deleteDirectory(dataDirectory);
+                deleteDirectoryRecursively(dataDirectory);
             } catch (IOException _) {
                 LOG.error("Could not clean up directory {}", dataDirectory.toAbsolutePath());
             }
@@ -414,7 +436,7 @@ public class EmbeddedPostgres implements Closeable {
                                 }
                             }
                         }
-                        PathUtils.deleteDirectory(dir);
+                        deleteDirectoryRecursively(dir);
                     }
                 } catch (OverlappingFileLockException e) {
                     LOG.trace("While cleaning old data directories", e);
@@ -760,16 +782,11 @@ public class EmbeddedPostgres implements Closeable {
      * @return Current operating system string.
      */
     private static String getOS() {
-        if (SystemUtils.IS_OS_WINDOWS) {
-            return "Windows";
-        }
-        if (SystemUtils.IS_OS_MAC_OSX) {
-            return "Darwin";
-        }
-        if (SystemUtils.IS_OS_LINUX) {
-            return "Linux";
-        }
-        throw new UnsupportedOperationException("Unknown OS " + SystemUtils.OS_NAME);
+        String osName = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        if (osName.contains("win")) return "Windows";
+        if (osName.contains("mac")) return "Darwin";
+        if (osName.contains("linux")) return "Linux";
+        throw new UnsupportedOperationException("Unknown OS: " + osName);
     }
 
     /**
@@ -778,7 +795,8 @@ public class EmbeddedPostgres implements Closeable {
      * @return Current machine architecture string.
      */
     private static String getArchitecture() {
-        return "amd64".equals(SystemUtils.OS_ARCH) ? "x86_64" : SystemUtils.OS_ARCH;
+        String arch = System.getProperty("os.arch", "");
+        return arch.equalsIgnoreCase("amd64") ? "x86_64" : arch;
     }
 
     /**
@@ -901,9 +919,9 @@ public class EmbeddedPostgres implements Closeable {
 
             try (DigestInputStream pgArchiveData = new DigestInputStream(pgBinary, MessageDigest.getInstance("MD5"));
                     ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
-                IOUtils.copy(pgArchiveData, baos);
+                pgArchiveData.transferTo(baos);
 
-                String pgDigest = Hex.encodeHexString(pgArchiveData.getMessageDigest().digest());
+                String pgDigest = HexFormat.of().formatHex(pgArchiveData.getMessageDigest().digest());
                 Path workingDirectory = Optional.ofNullable(overrideWorkingDirectory).orElse(getWorkingDirectory());
                 pgDir = workingDirectory.resolve(String.format("PG-%s", pgDigest));
 
@@ -1033,7 +1051,7 @@ public class EmbeddedPostgres implements Closeable {
                 command.addAll(Arrays.asList("unshare", "-U"));
             }
 
-            String extension = SystemUtils.IS_OS_WINDOWS ? ".exe" : "";
+            String extension = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win") ? ".exe" : "";
             command.add(pgDir.resolve("bin").resolve(commandName + extension).toString());
             command.addAll(arguments);
 

@@ -16,9 +16,7 @@
 
 package com.smushytaco.postgres.util;
 
-import org.apache.commons.lang3.StringUtils;
-
-import static org.apache.commons.lang3.StringUtils.lowerCase;
+import java.util.Locale;
 
 /**
  * Utility class for normalizing CPU architecture names across platforms.
@@ -43,55 +41,28 @@ public class ArchUtils {
      * @throws IllegalStateException if the input is blank or the architecture is unsupported
      */
     public static String normalize(String archName) {
-        if (StringUtils.isBlank(archName)) {
+        if (archName == null || archName.isBlank()) {
             throw new IllegalStateException("No architecture detected");
         }
 
-        String arch = lowerCase(archName).replaceAll("[^a-z0-9]+", "");
+        String arch = archName.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "");
 
-        if (arch.matches("^(x8664|amd64|ia32e|em64t|x64)$")) {
-            return "x86_64";
-        }
-        if (arch.matches("^(x8632|x86|i[3-6]86|ia32|x32)$")) {
-            return "x86_32";
-        }
-        if (arch.matches("^(ia64w?|itanium64)$")) {
-            return "itanium_64";
-        }
-        if ("ia64n".equals(arch)) {
-            return "itanium_32";
-        }
-        if (arch.matches("^(sparcv9|sparc64)$")) {
-            return "sparc_64";
-        }
-        if (arch.matches("^(sparc|sparc32)$")) {
-            return "sparc_32";
-        }
-        if (arch.matches("^(aarch64|armv8|arm64).*$")) {
-            return "arm_64";
-        }
-        if (arch.matches("^(arm|arm32).*$")) {
-            return "arm_32";
-        }
-        if (arch.matches("^(mips|mips32)$")) {
-            return "mips_32";
-        }
-        if (arch.matches("^(mipsel|mips32el)$")) {
-            return "mipsel_32";
-        }
-        if ("mips64".equals(arch)) {
-            return "mips_64";
-        }
-        if ("mips64el".equals(arch)) {
-            return "mipsel_64";
-        }
-        if (arch.matches("^(ppc|ppc32)$")) {
-            return "ppc_32";
-        }
-        if (arch.matches("^(ppcle|ppc32le)$")) {
-            return "ppcle_32";
-        }
+        if (arch.matches("^(x8664|amd64|ia32e|em64t|x64)$")) return "x86_64";
+        if (arch.matches("^(x8632|x86|i[3-6]86|ia32|x32)$")) return "x86_32";
+        if (arch.matches("^(ia64w?|itanium64)$")) return "itanium_64";
+        if (arch.matches("^(sparcv9|sparc64)$")) return "sparc_64";
+        if (arch.matches("^(sparc|sparc32)$")) return "sparc_32";
+        if (arch.matches("^(aarch64|armv8|arm64).*$")) return "arm_64";
+        if (arch.matches("^(arm|arm32).*$")) return "arm_32";
+        if (arch.matches("^(mips|mips32)$")) return "mips_32";
+        if (arch.matches("^(mipsel|mips32el)$")) return "mipsel_32";
+        if (arch.matches("^(ppc|ppc32)$")) return "ppc_32";
+        if (arch.matches("^(ppcle|ppc32le)$")) return "ppcle_32";
+
         return switch (arch) {
+            case "ia64n" -> "itanium_32";
+            case "mips64" -> "mips_64";
+            case "mips64el" -> "mipsel_64";
             case "ppc64" -> "ppc_64";
             case "ppc64le" -> "ppcle_64";
             case "s390" -> "s390_32";

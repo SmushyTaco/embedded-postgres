@@ -16,7 +16,6 @@
 
 package com.smushytaco.postgres.embedded;
 
-import org.apache.commons.lang3.reflect.MethodUtils;
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.configuration.FluentConfiguration;
 
@@ -77,11 +76,7 @@ public final class FlywayPreparer implements DatabasePreparer {
     public void prepare(DataSource ds) {
         configuration.dataSource(ds);
         Flyway flyway = configuration.load();
-        try {
-            MethodUtils.invokeMethod(flyway, "migrate");
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+        flyway.migrate();
     }
 
     @Override

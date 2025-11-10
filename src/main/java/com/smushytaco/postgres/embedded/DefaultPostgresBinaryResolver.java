@@ -18,9 +18,6 @@ package com.smushytaco.postgres.embedded;
 
 import com.smushytaco.postgres.util.ArchUtils;
 import com.smushytaco.postgres.util.LinuxUtils;
-import org.apache.commons.io.FilenameUtils;
-import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.Strings;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -29,12 +26,11 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLConnection;
-import java.util.Collections;
-import java.util.List;
-import java.util.Optional;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
+import java.util.*;
 
 import static java.lang.String.format;
-import static org.apache.commons.lang3.StringUtils.lowerCase;
 
 /**
  * The default implementation of {@link PgBinaryResolver} that locates PostgreSQL
@@ -83,8 +79,8 @@ public class DefaultPostgresBinaryResolver implements PgBinaryResolver {
             return resource.getInputStream();
         }
 
-        if ((Strings.CS.equals(system, "Darwin") && Strings.CS.equals(machineHardware, "aarch64"))
-                || (Strings.CS.equals(system, "Windows") && Strings.CS.equals(architecture, "arm_64"))) {
+        if ((Objects.equals(system, "Darwin") && Objects.equals(machineHardware, "aarch64"))
+                || (Objects.equals(system, "Windows") && Objects.equals(architecture, "arm_64"))) {
             resource = findPgBinary(normalize(format("postgres-%s-%s.txz", system, "x86_64")));
             if (resource != null) {
                 logger.warn("No native binaries supporting ARM architecture found. " +
@@ -118,16 +114,18 @@ public class DefaultPostgresBinaryResolver implements PgBinaryResolver {
     }
 
     private static String normalize(String input) {
-        if (StringUtils.isBlank(input)) {
+        if (input == null || input.isBlank()) {
             return input;
         }
-        return lowerCase(input.replace(' ', '_'));
+        return input.replace(' ', '_').toLowerCase(Locale.ROOT);
     }
 
     private record Resource(URL url) {
 
         public String getFilename() {
-            return FilenameUtils.getName(url.getPath());
+            String path = URLDecoder.decode(url.getPath(), StandardCharsets.UTF_8);
+            int slash = path.lastIndexOf('/');
+            return (slash != -1) ? path.substring(slash + 1) : path;
         }
 
         public InputStream getInputStream() throws IOException {

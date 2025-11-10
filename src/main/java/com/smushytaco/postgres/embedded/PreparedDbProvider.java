@@ -17,11 +17,11 @@
 package com.smushytaco.postgres.embedded;
 
 import com.smushytaco.postgres.embedded.EmbeddedPostgres.Builder;
-import org.apache.commons.lang3.RandomStringUtils;
 import org.postgresql.ds.PGSimpleDataSource;
 
 import javax.sql.DataSource;
 import java.io.IOException;
+import java.security.SecureRandom;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
@@ -43,6 +43,8 @@ import static java.util.Collections.unmodifiableMap;
  */
 public class PreparedDbProvider {
     private static final String JDBC_FORMAT = "jdbc:postgresql://localhost:%d/%s?user=%s";
+    private static final String ALPHABET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     /**
      * Each database cluster's <code>template1</code> database has a unique set of schema
@@ -257,10 +259,20 @@ public class PreparedDbProvider {
             }
         }
 
+        @SuppressWarnings("SameParameterValue")
+        private static String randomAlphabetic(int length) {
+            return SECURE_RANDOM
+                    .ints(length, 0, ALPHABET.length())
+                    .mapToObj(ALPHABET::charAt)
+                    .collect(StringBuilder::new, StringBuilder::append, StringBuilder::append)
+                    .toString()
+                    .toLowerCase(Locale.ENGLISH);
+        }
+
         @Override
         public void run() {
             while (true) {
-                final String newDbName = RandomStringUtils.secure().nextAlphabetic(12).toLowerCase(Locale.ENGLISH);
+                final String newDbName = randomAlphabetic(12);
                 SQLException failure = null;
                 try {
                     create(pg.getPostgresDatabase(), newDbName, "postgres");
