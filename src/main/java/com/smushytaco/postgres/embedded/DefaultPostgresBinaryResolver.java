@@ -41,6 +41,7 @@ import static java.lang.String.format;
  * (e.g., {@code postgres-Linux-x86_64.txz}) and provides them as an {@link InputStream}.
  * It also includes fallback behavior for unsupported or emulated architectures.
  */
+@SuppressWarnings("java:S6548")
 public class DefaultPostgresBinaryResolver implements PgBinaryResolver {
     private static final Logger logger = LoggerFactory.getLogger(DefaultPostgresBinaryResolver.class);
 

@@ -18,41 +18,73 @@ package com.smushytaco.postgres.junit;
 
 import com.smushytaco.postgres.embedded.EmbeddedPostgres;
 import org.jspecify.annotations.NonNull;
-import org.junit.jupiter.api.extension.AfterTestExecutionCallback;
-import org.junit.jupiter.api.extension.BeforeTestExecutionCallback;
-import org.junit.jupiter.api.extension.ExtensionContext;
+import org.junit.jupiter.api.extension.*;
 
 import java.io.IOException;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 /**
- * JUnit 6 extension that starts a single, reusable instance of {@link EmbeddedPostgres}
- * for the duration of a test case.
- * <p>
- * The same PostgreSQL process is reused for all tests within the same test execution,
- * and is automatically stopped after each test completes.
+ * JUnit 6 extension that starts an {@link EmbeddedPostgres} for tests.
+ *
+ * <p>Behavior by registration style:
+ * <ul>
+ *   <li><b>static @RegisterExtension</b>: one Embedded Postgres per test class (created once, closed after the class)</li>
+ *   <li><b>non-static @RegisterExtension</b>: fresh Embedded Postgres per test method (created {@literal &} closed per test)</li>
+ * </ul>
  */
-public class SingleInstancePostgresExtension implements AfterTestExecutionCallback, BeforeTestExecutionCallback {
-    private volatile EmbeddedPostgres epg;
-    private volatile Connection postgresConnection;
+public class SingleInstancePostgresExtension implements BeforeAllCallback, AfterAllCallback, BeforeTestExecutionCallback, AfterTestExecutionCallback {
+    private final Object stateKey = new Object();
+
     private final List<Consumer<EmbeddedPostgres.Builder>> builderCustomizers = new CopyOnWriteArrayList<>();
+    private final AtomicBoolean started = new AtomicBoolean(false);
+
+    private final ThreadLocal<State> current = new ThreadLocal<>();
 
     SingleInstancePostgresExtension() {}
 
+    @SuppressWarnings("DuplicatedCode")
     @Override
-    public void beforeTestExecution(@NonNull final ExtensionContext extensionContext) throws SQLException, IOException {
-        epg = pg();
-        postgresConnection = epg.getPostgresDatabase().getConnection();
+    public void beforeAll(@NonNull final ExtensionContext ctx) throws SQLException, IOException {
+        final ExtensionContext.Store classStore = classStore(ctx);
+        State state = classStore.get(stateKey, State.class);
+        if (state == null) {
+            state = createState();
+            classStore.put(stateKey, state);
+            started.set(true);
+        }
+        current.set(state);
     }
 
-    private EmbeddedPostgres pg() throws IOException {
-        final EmbeddedPostgres.Builder builder = EmbeddedPostgres.builder();
-        builderCustomizers.forEach(c -> c.accept(builder));
-        return builder.start();
+    @Override
+    public void afterAll(@NonNull final ExtensionContext ctx) {
+        current.remove();
+    }
+
+    @SuppressWarnings("DuplicatedCode")
+    @Override
+    public void beforeTestExecution(@NonNull final ExtensionContext ctx) throws SQLException, IOException {
+        final ExtensionContext.Store classStore = classStore(ctx);
+        State state = classStore.get(stateKey, State.class);
+        if (state == null) {
+            final ExtensionContext.Store methodStore = methodStore(ctx);
+            state = methodStore.get(stateKey, State.class);
+            if (state == null) {
+                state = createState();
+                methodStore.put(stateKey, state);
+                started.set(true);
+            }
+        }
+        current.set(state);
+    }
+
+    @Override
+    public void afterTestExecution(@NonNull final ExtensionContext ctx) {
+        current.remove();
     }
 
     /**
@@ -68,37 +100,48 @@ public class SingleInstancePostgresExtension implements AfterTestExecutionCallba
      */
     @SuppressWarnings("unused")
     public SingleInstancePostgresExtension customize(final Consumer<EmbeddedPostgres.Builder> customizer) {
-        if (epg != null) throw new AssertionError("already started");
+        if (started.get()) throw new AssertionError("already started");
         builderCustomizers.add(customizer);
         return this;
     }
 
     /**
-     * Returns the active {@link EmbeddedPostgres} instance started by this extension.
-     * <p>
-     * The instance is created lazily before the first test execution and remains
-     * available for the entire lifetime of the test.
+     * Returns the active {@link EmbeddedPostgres} for the current test scope.
      *
      * @return the active {@link EmbeddedPostgres} instance
      * @throws AssertionError if the extension has not been started yet
      */
     public EmbeddedPostgres getEmbeddedPostgres() {
-        final EmbeddedPostgres theEpg = this.epg;
-        if (theEpg == null) throw new AssertionError("JUnit test not started yet!");
-        return theEpg;
+        final State s = current.get();
+        if (s == null) throw new AssertionError("not initialized");
+        return s.epg;
     }
 
-    @Override
-    public void afterTestExecution(@NonNull final ExtensionContext extensionContext) {
-        try {
-            postgresConnection.close();
-        } catch (final SQLException e) {
-            throw new AssertionError(e);
-        }
-        try {
-            epg.close();
-        } catch (final IOException e) {
-            throw new AssertionError(e);
+    @SuppressWarnings("java:S2095")
+    private State createState() throws IOException, SQLException {
+        final EmbeddedPostgres.Builder builder = EmbeddedPostgres.builder();
+        builderCustomizers.forEach(c -> c.accept(builder));
+        final EmbeddedPostgres epg = builder.start();
+        return new State(epg, epg.getPostgresDatabase().getConnection());
+    }
+
+    private static ExtensionContext.Store classStore(final ExtensionContext ctx) {
+        return ctx.getStore(ExtensionContext.Namespace.create(SingleInstancePostgresExtension.class, ctx.getRequiredTestClass()));
+    }
+
+    private static ExtensionContext.Store methodStore(final ExtensionContext ctx) {
+        return ctx.getStore(ExtensionContext.Namespace.create(SingleInstancePostgresExtension.class, ctx.getRequiredTestMethod()));
+    }
+
+    private record State(EmbeddedPostgres epg, Connection postgresConnection) implements AutoCloseable {
+        @Override
+        public void close() {
+            try {
+                if (postgresConnection != null && !postgresConnection.isClosed()) postgresConnection.close();
+            } catch (final Exception _) { /* noop */ }
+            try {
+                if (epg != null) epg.close();
+            } catch (final Exception _) { /* noop */ }
         }
     }
 }

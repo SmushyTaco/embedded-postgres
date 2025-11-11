@@ -27,6 +27,7 @@ import java.sql.Statement;
 import static org.junit.jupiter.api.Assertions.*;
 
 class SingleInstanceRuleTest {
+    @SuppressWarnings("JUnitMalformedDeclaration")
     @RegisterExtension
     final SingleInstancePostgresExtension epg = EmbeddedPostgresExtension.singleInstance();
 

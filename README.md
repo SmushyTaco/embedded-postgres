@@ -34,7 +34,7 @@ dependencies {
 And the following to your `gradle.properties`:
 ```properties
 # Check this on https://central.sonatype.com/artifact/com.smushytaco/embedded-postgres/
-embedded_postgres_version = 3.0.1
+embedded_postgres_version = 3.0.2
 ```
 
 The default version of the embedded postgres is `PostgreSQL 18.0.0`, but you can change it by following the instructions described in [Postgres version](#postgres-version).
@@ -45,7 +45,7 @@ In your JUnit test just add:
 
 ```java
 @RegisterExtension
-SingleInstancePostgresExtension pg = EmbeddedPostgresExtension.singleInstance();
+final SingleInstancePostgresExtension pg = EmbeddedPostgresExtension.singleInstance();
 ```
 
 This simply has JUnit manage an instance of EmbeddedPostgres (start, stop). You can then use this to get a DataSource with: `pg.getEmbeddedPostgres().getPostgresDatabase();`  
@@ -60,13 +60,13 @@ You can easily integrate Flyway or Liquibase database schema migration:
 ##### Flyway
 ```java
 @RegisterExtension
-PreparedDbExtension db = EmbeddedPostgresExtension.preparedDatabase(FlywayPreparer.forClasspathLocation("db/my-db-schema"));
+final PreparedDbExtension db = EmbeddedPostgresExtension.preparedDatabase(FlywayPreparer.forClasspathLocation("db/my-db-schema"));
 ```
 
 ##### Liquibase
 ```java
 @RegisterExtension
-PreparedDbExtension db = EmbeddedPostgresExtension.preparedDatabase(LiquibasePreparer.forClasspathLocation("liqui/master.xml"));
+final PreparedDbExtension db = EmbeddedPostgresExtension.preparedDatabase(LiquibasePreparer.forClasspathLocation("liqui/master.xml"));
 ```
 
 This will create an independent database for every test with the given schema loaded from the classpath.

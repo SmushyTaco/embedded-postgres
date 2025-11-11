@@ -259,6 +259,7 @@ public class PreparedDbProvider {
                     .toLowerCase(Locale.ENGLISH);
         }
 
+        @SuppressWarnings("java:S2189")
         @Override
         public void run() {
             while (true) {
@@ -401,6 +402,7 @@ public class PreparedDbProvider {
          *
          * @return the exception that caused creation to fail, or {@code null} on success
          */
+        @SuppressWarnings("unused")
         public SQLException getException() {
             return ex;
         }

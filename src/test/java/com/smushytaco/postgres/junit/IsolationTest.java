@@ -24,9 +24,11 @@ import java.sql.SQLException;
 import java.sql.Statement;
 
 class IsolationTest {
+    @SuppressWarnings("JUnitMalformedDeclaration")
     @RegisterExtension
     final SingleInstancePostgresExtension pg1 = EmbeddedPostgresExtension.singleInstance();
 
+    @SuppressWarnings("JUnitMalformedDeclaration")
     @RegisterExtension
     final SingleInstancePostgresExtension pg2 = EmbeddedPostgresExtension.singleInstance();
 

@@ -383,6 +383,7 @@ public class EmbeddedPostgres implements Closeable {
         system(pgCtl, args, null);
     }
 
+    @SuppressWarnings("java:S1141")
     private void cleanOldDataDirectories(final Path parentDirectory) {
         try (final Stream<Path> children = Files.list(parentDirectory)) {
             for (final Path dir : children.toList()) {
@@ -844,6 +845,7 @@ public class EmbeddedPostgres implements Closeable {
         }
     }
 
+    @SuppressWarnings("java:S1141")
     private static Path prepareBinaries(final PgBinaryResolver pgBinaryResolver, final Path overrideWorkingDirectory) {
         PREPARE_BINARIES_LOCK.lock();
         try {

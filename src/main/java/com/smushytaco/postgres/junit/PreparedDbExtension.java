@@ -27,6 +27,7 @@ import javax.sql.DataSource;
 import java.sql.SQLException;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 /**
@@ -37,13 +38,14 @@ import java.util.function.Consumer;
  * per test class or each test can get its own fresh database instance.
  */
 public class PreparedDbExtension implements BeforeAllCallback, AfterAllCallback, BeforeEachCallback, AfterEachCallback {
-    private final DatabasePreparer preparer;
-    private boolean perClass = false;
-    private volatile DataSource dataSource;
-    private volatile PreparedDbProvider provider;
-    private volatile ConnectionInfo connectionInfo;
+    private final Object stateKey = new Object();
 
+    private final DatabasePreparer preparer;
     private final List<Consumer<EmbeddedPostgres.Builder>> builderCustomizers = new CopyOnWriteArrayList<>();
+
+    private final AtomicBoolean started = new AtomicBoolean(false);
+
+    private final ThreadLocal<State> current = new ThreadLocal<>();
 
     PreparedDbExtension(final DatabasePreparer preparer) {
         if (preparer == null) throw new IllegalStateException("null preparer");
@@ -62,41 +64,49 @@ public class PreparedDbExtension implements BeforeAllCallback, AfterAllCallback,
      * @throws AssertionError if the extension has already been started
      */
     public PreparedDbExtension customize(final Consumer<EmbeddedPostgres.Builder> customizer) {
-        if (dataSource != null) throw new AssertionError("already started");
+        if (started.get()) throw new AssertionError("already started");
         builderCustomizers.add(customizer);
         return this;
     }
 
+    @SuppressWarnings("DuplicatedCode")
     @Override
-    public void beforeAll(@NonNull final ExtensionContext extensionContext) throws SQLException {
-        provider = PreparedDbProvider.forPreparer(preparer, builderCustomizers);
-        connectionInfo = provider.createNewDatabase();
-        dataSource = provider.createDataSourceFromConnectionInfo(connectionInfo);
-        perClass = true;
+    public void beforeAll(@NonNull final ExtensionContext ctx) throws SQLException {
+        final ExtensionContext.Store classStore = classStore(ctx);
+        State state = classStore.get(stateKey, State.class);
+        if (state == null) {
+            state = createState();
+            classStore.put(stateKey, state);
+            started.set(true);
+        }
+        current.set(state);
     }
 
     @Override
-    public void afterAll(@NonNull final ExtensionContext extensionContext) {
-        dataSource = null;
-        connectionInfo = null;
-        provider = null;
-        perClass = false;
+    public void afterAll(@NonNull final ExtensionContext ctx) {
+        current.remove();
+    }
+
+    @SuppressWarnings("DuplicatedCode")
+    @Override
+    public void beforeEach(@NonNull final ExtensionContext ctx) throws SQLException {
+        final ExtensionContext.Store classStore = classStore(ctx);
+        State state = classStore.get(stateKey, State.class);
+        if (state == null) {
+            final ExtensionContext.Store methodStore = methodStore(ctx);
+            state = methodStore.get(stateKey, State.class);
+            if (state == null) {
+                state = createState();
+                methodStore.put(stateKey, state);
+                started.set(true);
+            }
+        }
+        current.set(state);
     }
 
     @Override
-    public void beforeEach(@NonNull final ExtensionContext extensionContext) throws SQLException {
-        if (perClass) return;
-        provider = PreparedDbProvider.forPreparer(preparer, builderCustomizers);
-        connectionInfo = provider.createNewDatabase();
-        dataSource = provider.createDataSourceFromConnectionInfo(connectionInfo);
-    }
-
-    @Override
-    public void afterEach(@NonNull final ExtensionContext extensionContext) {
-        if (perClass) return;
-        dataSource = null;
-        connectionInfo = null;
-        provider = null;
+    public void afterEach(@NonNull final ExtensionContext ctx) {
+        current.remove();
     }
 
     /**
@@ -108,8 +118,9 @@ public class PreparedDbExtension implements BeforeAllCallback, AfterAllCallback,
      * @throws AssertionError if the extension has not been initialized yet
      */
     public DataSource getTestDatabase() {
-        if (dataSource == null) throw new AssertionError("not initialized");
-        return dataSource;
+        final State s = current.get();
+        if (s == null) throw new AssertionError("not initialized");
+        return s.dataSource;
     }
 
     /**
@@ -120,8 +131,9 @@ public class PreparedDbExtension implements BeforeAllCallback, AfterAllCallback,
      * @throws AssertionError if the extension has not been initialized yet
      */
     public ConnectionInfo getConnectionInfo() {
-        if (connectionInfo == null) throw new AssertionError("not initialized");
-        return connectionInfo;
+        final State s = current.get();
+        if (s == null) throw new AssertionError("not initialized");
+        return s.connectionInfo;
     }
 
     /**
@@ -132,7 +144,34 @@ public class PreparedDbExtension implements BeforeAllCallback, AfterAllCallback,
      * @throws AssertionError if the extension has not been initialized yet
      */
     public PreparedDbProvider getDbProvider() {
-        if (provider == null) throw new AssertionError("not initialized");
-        return provider;
+        final State s = current.get();
+        if (s == null) throw new AssertionError("not initialized");
+        return s.provider;
+    }
+
+    private State createState() throws SQLException {
+        final PreparedDbProvider provider = PreparedDbProvider.forPreparer(preparer, builderCustomizers);
+        final ConnectionInfo connectionInfo = provider.createNewDatabase();
+        return new State(provider, connectionInfo, provider.createDataSourceFromConnectionInfo(connectionInfo));
+    }
+
+    private static ExtensionContext.Store classStore(final ExtensionContext ctx) {
+        return ctx.getStore(ExtensionContext.Namespace.create(PreparedDbExtension.class, ctx.getRequiredTestClass()));
+    }
+
+    private static ExtensionContext.Store methodStore(final ExtensionContext ctx) {
+        return ctx.getStore(ExtensionContext.Namespace.create(PreparedDbExtension.class, ctx.getRequiredTestMethod()));
+    }
+
+    private record State(PreparedDbProvider provider, ConnectionInfo connectionInfo, DataSource dataSource) implements AutoCloseable {
+        @Override
+        public void close() {
+            try {
+                if (provider instanceof final AutoCloseable autoCloseable) autoCloseable.close();
+            } catch (final Exception _) { /* noop */ }
+            try {
+                if (dataSource instanceof final AutoCloseable autoCloseable) autoCloseable.close();
+            } catch (final Exception _) { /* noop */ }
+        }
     }
 }
