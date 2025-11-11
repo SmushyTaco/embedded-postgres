@@ -37,7 +37,7 @@ import java.util.function.Consumer;
  *   <li><b>non-static @RegisterExtension</b>: fresh Embedded Postgres per test method (created {@literal &} closed per test)</li>
  * </ul>
  */
-public class SingleInstancePostgresExtension implements BeforeAllCallback, AfterAllCallback, BeforeTestExecutionCallback, AfterTestExecutionCallback {
+public class SingleInstancePostgresExtension implements BeforeAllCallback, AfterAllCallback, BeforeEachCallback, AfterEachCallback {
     private final Object stateKey = new Object();
 
     private final List<Consumer<EmbeddedPostgres.Builder>> builderCustomizers = new CopyOnWriteArrayList<>();
@@ -67,7 +67,7 @@ public class SingleInstancePostgresExtension implements BeforeAllCallback, After
 
     @SuppressWarnings("DuplicatedCode")
     @Override
-    public void beforeTestExecution(@NonNull final ExtensionContext ctx) throws SQLException, IOException {
+    public void beforeEach(@NonNull final ExtensionContext ctx) throws SQLException, IOException {
         final ExtensionContext.Store classStore = classStore(ctx);
         State state = classStore.get(stateKey, State.class);
         if (state == null) {
@@ -83,7 +83,7 @@ public class SingleInstancePostgresExtension implements BeforeAllCallback, After
     }
 
     @Override
-    public void afterTestExecution(@NonNull final ExtensionContext ctx) {
+    public void afterEach(@NonNull final ExtensionContext ctx) {
         current.remove();
     }
 
