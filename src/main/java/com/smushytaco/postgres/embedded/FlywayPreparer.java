@@ -32,7 +32,6 @@ import java.util.*;
  */
 @SuppressWarnings("ClassCanBeRecord")
 public final class FlywayPreparer implements DatabasePreparer {
-
     private final FluentConfiguration configuration;
     private final List<String> locations;
     private final Map<String, String> properties;
@@ -45,9 +44,8 @@ public final class FlywayPreparer implements DatabasePreparer {
      *                  (e.g., {@code "db/migration"})
      * @return a new {@link FlywayPreparer} configured to run migrations from the specified locations
      */
-    public static FlywayPreparer forClasspathLocation(String... locations) {
-        FluentConfiguration config = Flyway.configure().locations(locations);
-        return new FlywayPreparer(config, Arrays.asList(locations), null);
+    public static FlywayPreparer forClasspathLocation(final String... locations) {
+        return new FlywayPreparer(Flyway.configure().locations(locations), Arrays.asList(locations), null);
     }
 
     /**
@@ -61,29 +59,26 @@ public final class FlywayPreparer implements DatabasePreparer {
      * @return a new {@link FlywayPreparer} configured according to the specified properties
      */
     @SuppressWarnings("unused")
-    public static FlywayPreparer fromConfiguration(Map<String, String> configuration) {
-        FluentConfiguration config = Flyway.configure().configuration(configuration);
-        return new FlywayPreparer(config, null, new HashMap<>(configuration));
+    public static FlywayPreparer fromConfiguration(final Map<String, String> configuration) {
+        return new FlywayPreparer(Flyway.configure().configuration(configuration), null, new HashMap<>(configuration));
     }
 
-    private FlywayPreparer(FluentConfiguration configuration, List<String> locations, Map<String, String> properties) {
+    private FlywayPreparer(final FluentConfiguration configuration, final List<String> locations, final Map<String, String> properties) {
         this.configuration = configuration;
         this.locations = locations;
         this.properties = properties;
     }
 
     @Override
-    public void prepare(DataSource ds) {
-        configuration.dataSource(ds);
-        Flyway flyway = configuration.load();
-        flyway.migrate();
+    public void prepare(final DataSource ds) {
+        configuration.dataSource(ds).load().migrate();
     }
 
     @Override
-    public boolean equals(Object o) {
+    public boolean equals(final Object o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
-        FlywayPreparer that = (FlywayPreparer) o;
+        final FlywayPreparer that = (FlywayPreparer) o;
         return Objects.equals(locations, that.locations) && Objects.equals(properties, that.properties);
     }
 

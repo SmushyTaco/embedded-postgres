@@ -22,6 +22,7 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 
 import java.sql.Connection;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Statement;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -29,14 +30,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class FlywayPreparerTest {
     @SuppressWarnings("JUnitMalformedDeclaration")
     @RegisterExtension
-    PreparedDbExtension db = EmbeddedPostgresExtension.preparedDatabase(FlywayPreparer.forClasspathLocation("db/testing"));
+    final PreparedDbExtension db = EmbeddedPostgresExtension.preparedDatabase(FlywayPreparer.forClasspathLocation("db/testing"));
 
     @SuppressWarnings("SqlNoDataSourceInspection")
     @Test
-    void testTablesMade() throws Exception {
-        try (Connection c = db.getTestDatabase().getConnection();
-                Statement s = c.createStatement();
-                ResultSet rs = s.executeQuery("SELECT * FROM foo")) {
+    void testTablesMade() throws SQLException {
+        try (final Connection c = db.getTestDatabase().getConnection();
+                final Statement s = c.createStatement();
+                final ResultSet rs = s.executeQuery("SELECT * FROM foo")) {
             rs.next();
             assertEquals("bar", rs.getString(1));
         }

@@ -62,7 +62,7 @@ public class PreparedDbProvider {
      * @return a new {@link PreparedDbProvider} instance
      */
     @SuppressWarnings("unused")
-    public static PreparedDbProvider forPreparer(DatabasePreparer preparer) {
+    public static PreparedDbProvider forPreparer(final DatabasePreparer preparer) {
         return forPreparer(preparer, Collections.emptyList());
     }
 
@@ -75,11 +75,11 @@ public class PreparedDbProvider {
      * @param customizers customizations to apply to the {@link EmbeddedPostgres.Builder}
      * @return a new {@link PreparedDbProvider} instance
      */
-    public static PreparedDbProvider forPreparer(DatabasePreparer preparer, Iterable<Consumer<Builder>> customizers) {
+    public static PreparedDbProvider forPreparer(final DatabasePreparer preparer, final Iterable<Consumer<Builder>> customizers) {
         return new PreparedDbProvider(preparer, customizers);
     }
 
-    private PreparedDbProvider(DatabasePreparer preparer, Iterable<Consumer<Builder>> customizers) {
+    private PreparedDbProvider(final DatabasePreparer preparer, final Iterable<Consumer<Builder>> customizers) {
         try {
             dbPreparer = createOrFindPreparer(preparer, customizers);
         } catch (final IOException | SQLException e) {
@@ -91,12 +91,10 @@ public class PreparedDbProvider {
      * Each schema set has its own database cluster.  The template1 database has the schema preloaded so that
      * each test case need only create a new database and not re-invoke your preparer.
      */
-    private static synchronized PrepPipeline createOrFindPreparer(DatabasePreparer preparer, Iterable<Consumer<Builder>> customizers) throws IOException, SQLException {
+    private static synchronized PrepPipeline createOrFindPreparer(final DatabasePreparer preparer, final Iterable<Consumer<Builder>> customizers) throws IOException, SQLException {
         final ClusterKey key = new ClusterKey(preparer, customizers);
         PrepPipeline result = CLUSTERS.get(key);
-        if (result != null) {
-            return result;
-        }
+        if (result != null) return result;
 
         final Builder builder = EmbeddedPostgres.builder();
         customizers.forEach(c -> c.accept(builder));
@@ -162,10 +160,8 @@ public class PreparedDbProvider {
         ds.setDatabaseName(connectionInfo.dbName());
         ds.setUser(connectionInfo.user());
 
-        Set<Entry<String, String>> properties = connectionInfo.properties().entrySet();
-        for (Entry<String, String> property : properties) {
-            ds.setProperty(property.getKey(), property.getValue());
-        }
+        final Set<Entry<String, String>> properties = connectionInfo.properties().entrySet();
+        for (final Entry<String, String> property : properties) ds.setProperty(property.getKey(), property.getValue());
 
         return ds;
     }
@@ -183,8 +179,8 @@ public class PreparedDbProvider {
         return createDataSourceFromConnectionInfo(createNewDatabase());
     }
 
-    private String getJdbcUri(DbInfo db) {
-        String additionalParameters = db.getProperties().entrySet().stream()
+    private String getJdbcUri(final DbInfo db) {
+        final String additionalParameters = db.getProperties().entrySet().stream()
                 .map(e -> String.format("&%s=%s", e.getKey(), e.getValue()))
                 .collect(Collectors.joining());
         return String.format(JDBC_FORMAT, db.port, db.dbName, db.user) + additionalParameters;
@@ -202,7 +198,7 @@ public class PreparedDbProvider {
      * @throws SQLException if a new database cannot be created
      */
     @SuppressWarnings("unused")
-    public Map<String, String> getConfigurationTweak(String dbModuleName) throws SQLException {
+    public Map<String, String> getConfigurationTweak(final String dbModuleName) throws SQLException {
         final DbInfo db = dbPreparer.getNextDb();
         final Map<String, String> result = new HashMap<>();
         result.put("ot.db." + dbModuleName + ".uri", getJdbcUri(db));
@@ -218,12 +214,12 @@ public class PreparedDbProvider {
         private final EmbeddedPostgres pg;
         private final SynchronousQueue<DbInfo> nextDatabase = new SynchronousQueue<>();
 
-        PrepPipeline(EmbeddedPostgres pg) {
+        PrepPipeline(final EmbeddedPostgres pg) {
             this.pg = pg;
         }
 
         PrepPipeline start() {
-            Thread t = new Thread(this);
+            final Thread t = new Thread(this);
             t.setDaemon(true); // so it doesn't block JVM shutdown
             t.setName("cluster-" + pg + "-preparer");
             t.start();
@@ -234,9 +230,7 @@ public class PreparedDbProvider {
         DbInfo getNextDb() throws SQLException {
             try {
                 final DbInfo next = nextDatabase.take();
-                if (next.ex != null) {
-                    throw next.ex;
-                }
+                if (next.ex != null) throw next.ex;
                 return next;
             } catch (final InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -246,21 +240,17 @@ public class PreparedDbProvider {
 
         @SuppressWarnings("SameParameterValue")
         private static void create(final DataSource connectDb, final String dbName, final String userName) throws SQLException {
-            if (dbName == null) {
-                throw new IllegalStateException("the database name must not be null!");
-            }
-            if (userName == null) {
-                throw new IllegalStateException("the user name must not be null!");
-            }
+            if (dbName == null) throw new IllegalStateException("the database name must not be null!");
+            if (userName == null) throw new IllegalStateException("the user name must not be null!");
 
-            try (Connection c = connectDb.getConnection();
-                    PreparedStatement stmt = c.prepareStatement(String.format("CREATE DATABASE %s OWNER %s ENCODING = 'utf8'", dbName, userName))) {
+            try (final Connection c = connectDb.getConnection();
+                    final PreparedStatement stmt = c.prepareStatement(String.format("CREATE DATABASE %s OWNER %s ENCODING = 'utf8'", dbName, userName))) {
                 stmt.execute();
             }
         }
 
         @SuppressWarnings("SameParameterValue")
-        private static String randomAlphabetic(int length) {
+        private static String randomAlphabetic(final int length) {
             return SECURE_RANDOM
                     .ints(length, 0, ALPHABET.length())
                     .mapToObj(ALPHABET::charAt)
@@ -276,7 +266,7 @@ public class PreparedDbProvider {
                 SQLException failure = null;
                 try {
                     create(pg.getPostgresDatabase(), newDbName, "postgres");
-                } catch (SQLException e) {
+                } catch (final SQLException e) {
                     failure = e;
                 }
                 try {
@@ -298,23 +288,18 @@ public class PreparedDbProvider {
         private final DatabasePreparer preparer;
         private final Builder builder;
 
-        ClusterKey(DatabasePreparer preparer, Iterable<Consumer<Builder>> customizers) {
+        ClusterKey(final DatabasePreparer preparer, final Iterable<Consumer<Builder>> customizers) {
             this.preparer = preparer;
             this.builder = EmbeddedPostgres.builder();
             customizers.forEach(c -> c.accept(this.builder));
         }
 
         @Override
-        public boolean equals(Object o) {
-            if (this == o) {
-                return true;
-            }
-            if (o == null || getClass() != o.getClass()) {
-                return false;
-            }
-            ClusterKey that = (ClusterKey) o;
-            return Objects.equals(preparer, that.preparer) &&
-                    Objects.equals(builder, that.builder);
+        public boolean equals(final Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            final ClusterKey that = (ClusterKey) o;
+            return Objects.equals(preparer, that.preparer) && Objects.equals(builder, that.builder);
         }
 
         @Override
@@ -355,7 +340,7 @@ public class PreparedDbProvider {
          * @param e the {@link SQLException} describing the failure
          * @return a {@link DbInfo} containing the failure information
          */
-        public static DbInfo error(SQLException e) {
+        public static DbInfo error(final SQLException e) {
             return new DbInfo(null, -1, null, emptyMap(), e);
         }
 

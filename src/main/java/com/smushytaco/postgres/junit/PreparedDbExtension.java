@@ -24,6 +24,7 @@ import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.extension.*;
 
 import javax.sql.DataSource;
+import java.sql.SQLException;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
@@ -36,7 +37,6 @@ import java.util.function.Consumer;
  * per test class or each test can get its own fresh database instance.
  */
 public class PreparedDbExtension implements BeforeAllCallback, AfterAllCallback, BeforeEachCallback, AfterEachCallback {
-
     private final DatabasePreparer preparer;
     private boolean perClass = false;
     private volatile DataSource dataSource;
@@ -45,10 +45,8 @@ public class PreparedDbExtension implements BeforeAllCallback, AfterAllCallback,
 
     private final List<Consumer<EmbeddedPostgres.Builder>> builderCustomizers = new CopyOnWriteArrayList<>();
 
-    PreparedDbExtension(DatabasePreparer preparer) {
-        if (preparer == null) {
-            throw new IllegalStateException("null preparer");
-        }
+    PreparedDbExtension(final DatabasePreparer preparer) {
+        if (preparer == null) throw new IllegalStateException("null preparer");
         this.preparer = preparer;
     }
 
@@ -63,16 +61,14 @@ public class PreparedDbExtension implements BeforeAllCallback, AfterAllCallback,
      * @return this {@link PreparedDbExtension} instance for method chaining
      * @throws AssertionError if the extension has already been started
      */
-    public PreparedDbExtension customize(Consumer<EmbeddedPostgres.Builder> customizer) {
-        if (dataSource != null) {
-            throw new AssertionError("already started");
-        }
+    public PreparedDbExtension customize(final Consumer<EmbeddedPostgres.Builder> customizer) {
+        if (dataSource != null) throw new AssertionError("already started");
         builderCustomizers.add(customizer);
         return this;
     }
 
     @Override
-    public void beforeAll(@NonNull ExtensionContext extensionContext) throws Exception {
+    public void beforeAll(@NonNull final ExtensionContext extensionContext) throws SQLException {
         provider = PreparedDbProvider.forPreparer(preparer, builderCustomizers);
         connectionInfo = provider.createNewDatabase();
         dataSource = provider.createDataSourceFromConnectionInfo(connectionInfo);
@@ -80,7 +76,7 @@ public class PreparedDbExtension implements BeforeAllCallback, AfterAllCallback,
     }
 
     @Override
-    public void afterAll(@NonNull ExtensionContext extensionContext) {
+    public void afterAll(@NonNull final ExtensionContext extensionContext) {
         dataSource = null;
         connectionInfo = null;
         provider = null;
@@ -88,21 +84,19 @@ public class PreparedDbExtension implements BeforeAllCallback, AfterAllCallback,
     }
 
     @Override
-    public void beforeEach(@NonNull ExtensionContext extensionContext) throws Exception {
-        if (!perClass) {
-            provider = PreparedDbProvider.forPreparer(preparer, builderCustomizers);
-            connectionInfo = provider.createNewDatabase();
-            dataSource = provider.createDataSourceFromConnectionInfo(connectionInfo);
-        }
+    public void beforeEach(@NonNull final ExtensionContext extensionContext) throws SQLException {
+        if (perClass) return;
+        provider = PreparedDbProvider.forPreparer(preparer, builderCustomizers);
+        connectionInfo = provider.createNewDatabase();
+        dataSource = provider.createDataSourceFromConnectionInfo(connectionInfo);
     }
 
     @Override
-    public void afterEach(@NonNull ExtensionContext extensionContext) {
-        if (!perClass) {
-            dataSource = null;
-            connectionInfo = null;
-            provider = null;
-        }
+    public void afterEach(@NonNull final ExtensionContext extensionContext) {
+        if (perClass) return;
+        dataSource = null;
+        connectionInfo = null;
+        provider = null;
     }
 
     /**
@@ -114,9 +108,7 @@ public class PreparedDbExtension implements BeforeAllCallback, AfterAllCallback,
      * @throws AssertionError if the extension has not been initialized yet
      */
     public DataSource getTestDatabase() {
-        if (dataSource == null) {
-            throw new AssertionError("not initialized");
-        }
+        if (dataSource == null) throw new AssertionError("not initialized");
         return dataSource;
     }
 
@@ -128,9 +120,7 @@ public class PreparedDbExtension implements BeforeAllCallback, AfterAllCallback,
      * @throws AssertionError if the extension has not been initialized yet
      */
     public ConnectionInfo getConnectionInfo() {
-        if (connectionInfo == null) {
-            throw new AssertionError("not initialized");
-        }
+        if (connectionInfo == null) throw new AssertionError("not initialized");
         return connectionInfo;
     }
 
@@ -142,10 +132,7 @@ public class PreparedDbExtension implements BeforeAllCallback, AfterAllCallback,
      * @throws AssertionError if the extension has not been initialized yet
      */
     public PreparedDbProvider getDbProvider() {
-        if (provider == null) {
-            throw new AssertionError("not initialized");
-        }
+        if (provider == null) throw new AssertionError("not initialized");
         return provider;
     }
-
 }

@@ -24,6 +24,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Statement;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -34,11 +35,11 @@ class EmbeddedPostgresTest {
 
     @SuppressWarnings("SqlNoDataSourceInspection")
     @Test
-    void testEmbeddedPg() throws Exception {
-        try (EmbeddedPostgres pg = EmbeddedPostgres.start();
-                Connection c = pg.getPostgresDatabase().getConnection();
-                Statement s = c.createStatement();
-                ResultSet rs = s.executeQuery("SELECT 1")) {
+    void testEmbeddedPg() throws IOException, SQLException {
+        try (final EmbeddedPostgres pg = EmbeddedPostgres.start();
+                final Connection c = pg.getPostgresDatabase().getConnection();
+                final Statement s = c.createStatement();
+                final ResultSet rs = s.executeQuery("SELECT 1")) {
             assertTrue(rs.next());
             assertEquals(1, rs.getInt(1));
             assertFalse(rs.next());
@@ -47,26 +48,26 @@ class EmbeddedPostgresTest {
 
     @SuppressWarnings("SqlNoDataSourceInspection")
     @Test
-    void testEmbeddedPgCreationWithNestedDataDirectory() throws Exception {
-        Path dataDir = Files.createDirectories(tf.resolve("data-dir-parent").resolve("data-dir"));
-        try (EmbeddedPostgres pg = EmbeddedPostgres.builder()
+    void testEmbeddedPgCreationWithNestedDataDirectory() throws IOException, SQLException {
+        final Path dataDir = Files.createDirectories(tf.resolve("data-dir-parent").resolve("data-dir"));
+        try (final EmbeddedPostgres pg = EmbeddedPostgres.builder()
                 .setDataDirectory(dataDir)
                 .setDataDirectoryCustomizer(dd -> {
                     assertEquals(dataDir, dd);
-                    Path pgConfigFile = dd.resolve("postgresql.conf");
+                    final Path pgConfigFile = dd.resolve("postgresql.conf");
                     assertTrue(Files.isRegularFile(pgConfigFile));
                     try {
-                        String pgConfig = Files.readString(pgConfigFile);
-                        pgConfig = pgConfig.replaceFirst("#?listen_addresses\\s*=\\s*'localhost'", "listen_addresses = '*'");
+                        final String pgConfig = Files.readString(pgConfigFile)
+                                .replaceFirst("#?listen_addresses\\s*=\\s*'localhost'", "listen_addresses = '*'");
                         Files.writeString(pgConfigFile, pgConfig);
-                    } catch (IOException e) {
+                    } catch (final IOException e) {
                         throw new RuntimeException(e);
                     }
                 })
                 .start()) {
-            try (Connection connection = pg.getPostgresDatabase().getConnection();
-                    Statement statement = connection.createStatement();
-                    ResultSet rs = statement.executeQuery("SHOW listen_addresses;")) {
+            try (final Connection connection = pg.getPostgresDatabase().getConnection();
+                    final Statement statement = connection.createStatement();
+                    final ResultSet rs = statement.executeQuery("SHOW listen_addresses;")) {
                 rs.next();
                 assertEquals("*", rs.getString(1));
             }

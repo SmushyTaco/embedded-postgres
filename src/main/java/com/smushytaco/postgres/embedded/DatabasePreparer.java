@@ -41,5 +41,5 @@ public interface DatabasePreparer {
      * @param ds the {@link DataSource} representing the target database
      * @throws SQLException if a database access error occurs during preparation
      */
-    void prepare(DataSource ds) throws SQLException;
+    void prepare(final DataSource ds) throws SQLException;
 }

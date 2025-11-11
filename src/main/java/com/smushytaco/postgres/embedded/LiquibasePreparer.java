@@ -43,7 +43,6 @@ import static liquibase.database.DatabaseFactory.getInstance;
  */
 @SuppressWarnings("ClassCanBeRecord")
 public final class LiquibasePreparer implements DatabasePreparer {
-
     private final String location;
     private final ResourceAccessor accessor;
     private final Contexts contexts;
@@ -56,7 +55,7 @@ public final class LiquibasePreparer implements DatabasePreparer {
      *                 (e.g., {@code "db/changelog/db.changelog-master.xml"})
      * @return a new {@link LiquibasePreparer} configured to use the changelog at the given location
      */
-    public static LiquibasePreparer forClasspathLocation(String location) {
+    public static LiquibasePreparer forClasspathLocation(final String location) {
         return forClasspathLocation(location, null);
     }
 
@@ -68,7 +67,7 @@ public final class LiquibasePreparer implements DatabasePreparer {
      * @param contexts the {@link Contexts} defining which Liquibase changesets should be applied
      * @return a new {@link LiquibasePreparer} configured with the given changelog and contexts
      */
-    public static LiquibasePreparer forClasspathLocation(String location, Contexts contexts) {
+    public static LiquibasePreparer forClasspathLocation(final String location, final Contexts contexts) {
         return new LiquibasePreparer(location, new ClassLoaderResourceAccessor(), contexts);
     }
 
@@ -79,7 +78,7 @@ public final class LiquibasePreparer implements DatabasePreparer {
      * @param file the path to the Liquibase changelog file
      * @return a new {@link LiquibasePreparer} configured to use the changelog at the given file path
      */
-    public static LiquibasePreparer forFile(Path file) {
+    public static LiquibasePreparer forFile(final Path file) {
         return forFile(file, null);
     }
 
@@ -91,42 +90,39 @@ public final class LiquibasePreparer implements DatabasePreparer {
      * @param contexts the {@link Contexts} defining which Liquibase changesets should be applied
      * @return a new {@link LiquibasePreparer} configured with the given changelog and contexts
      */
-    public static LiquibasePreparer forFile(Path file, Contexts contexts) {
-        if (file == null)
-            throw new IllegalArgumentException("Missing file");
-        Path dir = file.getParent();
-        if (dir == null)
-            throw new IllegalArgumentException("Cannot get parent dir from file");
+    public static LiquibasePreparer forFile(final Path file, final Contexts contexts) {
+        if (file == null) throw new IllegalArgumentException("Missing file");
+        final Path dir = file.getParent();
+        if (dir == null) throw new IllegalArgumentException("Cannot get parent dir from file");
 
         try {
             return new LiquibasePreparer(file.getFileName().toString(), new DirectoryResourceAccessor(dir), contexts);
-        } catch (FileNotFoundException e) {
+        } catch (final FileNotFoundException e) {
             throw new RuntimeException(e);
         }
     }
 
-    private LiquibasePreparer(String location, ResourceAccessor accessor, Contexts contexts) {
+    private LiquibasePreparer(final String location, final ResourceAccessor accessor, final Contexts contexts) {
         this.location = location;
         this.accessor = accessor;
         this.contexts = contexts != null ? contexts : new Contexts();
     }
 
     @Override
-    public void prepare(DataSource ds) throws SQLException {
-        try (Connection connection = ds.getConnection();
-                Database database = getInstance().findCorrectDatabaseImplementation(new JdbcConnection(connection))) {
-            Liquibase liquibase = new Liquibase(location, accessor, database);
-            liquibase.update(contexts);
-        } catch (LiquibaseException e) {
+    public void prepare(final DataSource ds) throws SQLException {
+        try (final Connection connection = ds.getConnection();
+                final Database database = getInstance().findCorrectDatabaseImplementation(new JdbcConnection(connection))) {
+            new Liquibase(location, accessor, database).update(contexts);
+        } catch (final LiquibaseException e) {
             throw new SQLException(e);
         }
     }
 
     @Override
-    public boolean equals(Object o) {
+    public boolean equals(final Object o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
-        LiquibasePreparer that = (LiquibasePreparer) o;
+        final LiquibasePreparer that = (LiquibasePreparer) o;
         return Objects.equals(location, that.location)
                 && Objects.equals(accessor, that.accessor)
                 && Objects.equals(contexts.getContexts(), that.contexts.getContexts());

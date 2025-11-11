@@ -23,22 +23,22 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 
 import java.sql.Connection;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Statement;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class LiquibasePreparerClasspathContextTest {
-
     @SuppressWarnings("JUnitMalformedDeclaration")
     @RegisterExtension
-    PreparedDbExtension db = EmbeddedPostgresExtension.preparedDatabase(LiquibasePreparer.forClasspathLocation("liqui/master-test.xml", new Contexts("test")));
+    final PreparedDbExtension db = EmbeddedPostgresExtension.preparedDatabase(LiquibasePreparer.forClasspathLocation("liqui/master-test.xml", new Contexts("test")));
 
     @SuppressWarnings("SqlNoDataSourceInspection")
     @Test
-    void testEmptyTables() throws Exception {
-        try (Connection c = db.getTestDatabase().getConnection();
-                Statement s = c.createStatement();
-                ResultSet rs = s.executeQuery("SELECT COUNT(*) FROM foo")) {
+    void testEmptyTables() throws SQLException {
+        try (final Connection c = db.getTestDatabase().getConnection();
+                final Statement s = c.createStatement();
+                final ResultSet rs = s.executeQuery("SELECT COUNT(*) FROM foo")) {
             rs.next();
             assertEquals(0, rs.getInt(1));
         }

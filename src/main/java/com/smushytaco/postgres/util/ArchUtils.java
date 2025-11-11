@@ -27,7 +27,6 @@ import java.util.Locale;
  * reported by different systems and JVMs.
  */
 public class ArchUtils {
-
     private ArchUtils() {}
 
     /**
@@ -40,12 +39,10 @@ public class ArchUtils {
      * @return the normalized architecture string (e.g., {@code "x86_64"}, {@code "arm_64"})
      * @throws IllegalStateException if the input is blank or the architecture is unsupported
      */
-    public static String normalize(String archName) {
-        if (archName == null || archName.isBlank()) {
-            throw new IllegalStateException("No architecture detected");
-        }
+    public static String normalize(final String archName) {
+        if (archName == null || archName.isBlank()) throw new IllegalStateException("No architecture detected");
 
-        String arch = archName.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "");
+        final String arch = archName.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "");
 
         if (arch.matches("^(x8664|amd64|ia32e|em64t|x64)$")) return "x86_64";
         if (arch.matches("^(x8632|x86|i[3-6]86|ia32|x32)$")) return "x86_32";

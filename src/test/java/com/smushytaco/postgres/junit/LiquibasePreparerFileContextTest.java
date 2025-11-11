@@ -24,15 +24,15 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Statement;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class LiquibasePreparerFileContextTest {
-
     @SuppressWarnings("JUnitMalformedDeclaration")
     @RegisterExtension
-    PreparedDbExtension db = EmbeddedPostgresExtension.preparedDatabase(LiquibasePreparer.forFile(Path.of("src")
+    final PreparedDbExtension db = EmbeddedPostgresExtension.preparedDatabase(LiquibasePreparer.forFile(Path.of("src")
             .resolve("test")
             .resolve("resources")
             .resolve("liqui")
@@ -40,10 +40,10 @@ class LiquibasePreparerFileContextTest {
 
     @SuppressWarnings("SqlNoDataSourceInspection")
     @Test
-    void testEmptyTables() throws Exception {
-        try (Connection c = db.getTestDatabase().getConnection();
-                Statement s = c.createStatement();
-                ResultSet rs = s.executeQuery("SELECT COUNT(*) FROM foo")) {
+    void testEmptyTables() throws SQLException {
+        try (final Connection c = db.getTestDatabase().getConnection();
+                final Statement s = c.createStatement();
+                final ResultSet rs = s.executeQuery("SELECT COUNT(*) FROM foo")) {
             rs.next();
             assertEquals(0, rs.getInt(1));
         }

@@ -26,36 +26,35 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
 class PreparedDbCustomizerTest {
-
     private static final DatabasePreparer EMPTY_PREPARER = _ -> {};
 
     @SuppressWarnings("JUnitMalformedDeclaration")
     @RegisterExtension
-    PreparedDbExtension dbA1 = EmbeddedPostgresExtension.preparedDatabase(EMPTY_PREPARER);
+    final PreparedDbExtension dbA1 = EmbeddedPostgresExtension.preparedDatabase(EMPTY_PREPARER);
     @SuppressWarnings("JUnitMalformedDeclaration")
     @RegisterExtension
-    PreparedDbExtension dbA2 = EmbeddedPostgresExtension.preparedDatabase(EMPTY_PREPARER).customize(_ -> {});
+    final PreparedDbExtension dbA2 = EmbeddedPostgresExtension.preparedDatabase(EMPTY_PREPARER).customize(_ -> {});
     @SuppressWarnings("JUnitMalformedDeclaration")
     @RegisterExtension
-    PreparedDbExtension dbA3 = EmbeddedPostgresExtension.preparedDatabase(EMPTY_PREPARER).customize(builder -> builder.setPGStartupWait(Duration.ofSeconds(10)));
+    final PreparedDbExtension dbA3 = EmbeddedPostgresExtension.preparedDatabase(EMPTY_PREPARER).customize(builder -> builder.setPGStartupWait(Duration.ofSeconds(10)));
     @SuppressWarnings("JUnitMalformedDeclaration")
     @RegisterExtension
-    PreparedDbExtension dbB1 = EmbeddedPostgresExtension.preparedDatabase(EMPTY_PREPARER).customize(builder -> builder.setPGStartupWait(Duration.ofSeconds(11)));
+    final PreparedDbExtension dbB1 = EmbeddedPostgresExtension.preparedDatabase(EMPTY_PREPARER).customize(builder -> builder.setPGStartupWait(Duration.ofSeconds(11)));
     @SuppressWarnings("JUnitMalformedDeclaration")
     @RegisterExtension
-    PreparedDbExtension dbB2 = EmbeddedPostgresExtension.preparedDatabase(EMPTY_PREPARER).customize(builder -> builder.setPGStartupWait(Duration.ofSeconds(11)));
+    final PreparedDbExtension dbB2 = EmbeddedPostgresExtension.preparedDatabase(EMPTY_PREPARER).customize(builder -> builder.setPGStartupWait(Duration.ofSeconds(11)));
 
     @Test
     void testCustomizers() {
-        int dbA1Port = dbA1.getConnectionInfo().port();
-        int dbA2Port = dbA2.getConnectionInfo().port();
-        int dbA3Port = dbA3.getConnectionInfo().port();
+        final int dbA1Port = dbA1.getConnectionInfo().port();
+        final int dbA2Port = dbA2.getConnectionInfo().port();
+        final int dbA3Port = dbA3.getConnectionInfo().port();
 
         assertEquals(dbA1Port, dbA2Port);
         assertEquals(dbA1Port, dbA3Port);
 
-        int dbB1Port = dbB1.getConnectionInfo().port();
-        int dbB2Port = dbB2.getConnectionInfo().port();
+        final int dbB1Port = dbB1.getConnectionInfo().port();
+        final int dbB2Port = dbB2.getConnectionInfo().port();
 
         assertEquals(dbB1Port, dbB2Port);
 

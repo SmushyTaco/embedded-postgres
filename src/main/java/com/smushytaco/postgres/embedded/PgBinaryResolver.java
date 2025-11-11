@@ -25,7 +25,6 @@ import java.io.InputStream;
  * @see DefaultPostgresBinaryResolver
  */
 public interface PgBinaryResolver {
-
     /**
      * Returns an input stream containing the PostgreSQL binary for the given
      * operating system and hardware architecture.
@@ -39,5 +38,5 @@ public interface PgBinaryResolver {
      * @return an {@link InputStream} of the PostgreSQL binary archive
      * @throws IOException if the binary cannot be located, read, or opened
      */
-    InputStream getPgBinary(String system, String machineHardware) throws IOException;
+    InputStream getPgBinary(final String system, final String machineHardware) throws IOException;
 }

@@ -29,37 +29,34 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class ConnectConfigTest {
-
     private final CapturingDatabasePreparer preparer = new CapturingDatabasePreparer();
 
     @SuppressWarnings("JUnitMalformedDeclaration")
     @RegisterExtension
-    PreparedDbExtension db = EmbeddedPostgresExtension.preparedDatabase(preparer)
+    final PreparedDbExtension db = EmbeddedPostgresExtension.preparedDatabase(preparer)
             .customize(builder -> builder.setConnectConfig("connectTimeout", "20"));
 
     @Test
     void test() throws SQLException {
-        ConnectionInfo connectionInfo = db.getConnectionInfo();
+        final ConnectionInfo connectionInfo = db.getConnectionInfo();
 
-        Map<String, String> properties = connectionInfo.properties();
+        final Map<String, String> properties = connectionInfo.properties();
         assertEquals(1, properties.size());
         assertEquals("20", properties.get("connectTimeout"));
 
-        BaseDataSource testDatabase = (BaseDataSource) db.getTestDatabase();
+        final BaseDataSource testDatabase = (BaseDataSource) db.getTestDatabase();
         assertEquals("20", testDatabase.getProperty("connectTimeout"));
 
-        BaseDataSource preparerDataSource = (BaseDataSource) preparer.getDataSource();
+        final BaseDataSource preparerDataSource = (BaseDataSource) preparer.getDataSource();
         assertEquals("20", preparerDataSource.getProperty("connectTimeout"));
     }
 
     private static class CapturingDatabasePreparer implements DatabasePreparer {
-
         private DataSource dataSource;
 
         @Override
-        public void prepare(DataSource ds) {
-            if (dataSource != null)
-                throw new IllegalStateException("database preparer has been called multiple times");
+        public void prepare(final DataSource ds) {
+            if (dataSource != null) throw new IllegalStateException("database preparer has been called multiple times");
             dataSource = ds;
         }
 

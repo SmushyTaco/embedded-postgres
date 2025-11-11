@@ -17,7 +17,6 @@
 package com.smushytaco.postgres.junit;
 
 import com.smushytaco.postgres.embedded.DatabasePreparer;
-import org.junit.jupiter.api.extension.Extension;
 
 /**
  * Utility class providing JUnit 6 extensions for managing embedded PostgreSQL instances.
@@ -26,7 +25,6 @@ import org.junit.jupiter.api.extension.Extension;
  * a prepared instance initialized with a specific {@link DatabasePreparer}.
  */
 public final class EmbeddedPostgresExtension {
-
     private EmbeddedPostgresExtension() {}
 
     /**
@@ -48,8 +46,7 @@ public final class EmbeddedPostgresExtension {
      * @param preparer the {@link DatabasePreparer} that applies schema and data initialization
      * @return a new {@link PreparedDbExtension} configured with the given preparer
      */
-    public static PreparedDbExtension preparedDatabase(DatabasePreparer preparer) {
+    public static PreparedDbExtension preparedDatabase(final DatabasePreparer preparer) {
         return new PreparedDbExtension(preparer);
     }
-
 }

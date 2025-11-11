@@ -29,10 +29,9 @@ import java.sql.SQLException;
  * at the {@link javax.sql.DataSource} level.
  */
 public interface DatabaseConnectionPreparer extends DatabasePreparer {
-
     @Override
-    default void prepare(DataSource ds) throws SQLException {
-        try (Connection c = ds.getConnection()) {
+    default void prepare(final DataSource ds) throws SQLException {
+        try (final Connection c = ds.getConnection()) {
             prepare(c);
         }
     }
@@ -47,5 +46,5 @@ public interface DatabaseConnectionPreparer extends DatabasePreparer {
      * @param conn an active JDBC connection to the target database
      * @throws SQLException if an error occurs while preparing the database
      */
-    void prepare(Connection conn) throws SQLException;
+    void prepare(final Connection conn) throws SQLException;
 }

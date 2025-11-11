@@ -35,7 +35,6 @@ import static java.util.Collections.unmodifiableMap;
  * @param properties additional connection properties (maybe empty)
  */
 public record ConnectionInfo(String dbName, int port, String user, Map<String, String> properties) {
-
     /**
      * Creates a {@link ConnectionInfo} without any additional connection properties.
      *

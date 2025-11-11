@@ -21,20 +21,21 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 
 import java.sql.Connection;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Statement;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class SingleInstanceRuleTest {
     @RegisterExtension
-    SingleInstancePostgresExtension epg = EmbeddedPostgresExtension.singleInstance();
+    final SingleInstancePostgresExtension epg = EmbeddedPostgresExtension.singleInstance();
 
     @SuppressWarnings("SqlNoDataSourceInspection")
     @Test
-    void testRule() throws Exception {
-        try (Connection c = epg.getEmbeddedPostgres().getPostgresDatabase().getConnection();
-                Statement s = c.createStatement();
-                ResultSet rs = s.executeQuery("SELECT 1")) {
+    void testRule() throws SQLException {
+        try (final Connection c = epg.getEmbeddedPostgres().getPostgresDatabase().getConnection();
+                final Statement s = c.createStatement();
+                final ResultSet rs = s.executeQuery("SELECT 1")) {
             assertTrue(rs.next());
             assertEquals(1, rs.getInt(1));
             assertFalse(rs.next());

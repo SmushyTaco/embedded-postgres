@@ -25,29 +25,29 @@ import java.sql.Statement;
 
 class IsolationTest {
     @RegisterExtension
-    SingleInstancePostgresExtension pg1 = EmbeddedPostgresExtension.singleInstance();
+    final SingleInstancePostgresExtension pg1 = EmbeddedPostgresExtension.singleInstance();
 
     @RegisterExtension
-    SingleInstancePostgresExtension pg2 = EmbeddedPostgresExtension.singleInstance();
+    final SingleInstancePostgresExtension pg2 = EmbeddedPostgresExtension.singleInstance();
 
     @Test
-    void testIsolation() throws Exception {
-        try (Connection c = getConnection(pg1)) {
+    void testIsolation() throws SQLException {
+        try (final Connection c = getConnection(pg1)) {
             makeTable(c);
-            try (Connection c2 = getConnection(pg2)) {
+            try (final Connection c2 = getConnection(pg2)) {
                 makeTable(c2);
             }
         }
     }
 
     @SuppressWarnings("SqlNoDataSourceInspection")
-    private void makeTable(Connection c) throws SQLException {
-        try (Statement s = c.createStatement()) {
+    private void makeTable(final Connection c) throws SQLException {
+        try (final Statement s = c.createStatement()) {
             s.execute("CREATE TABLE public.foo (a INTEGER)");
         }
     }
 
-    private Connection getConnection(SingleInstancePostgresExtension epg) throws SQLException {
+    private Connection getConnection(final SingleInstancePostgresExtension epg) throws SQLException {
         return epg.getEmbeddedPostgres().getPostgresDatabase().getConnection();
     }
 }

@@ -19,7 +19,6 @@ val commonsCompressVersion = providers.gradleProperty("commons_compress_version"
 val flywayVersion = providers.gradleProperty("flyway_version")
 val junitVersion = providers.gradleProperty("junit_version")
 val liquibaseVersion = providers.gradleProperty("liquibase_version")
-val mockitoVersion = providers.gradleProperty("mockito_version")
 val postgresqlVersion = providers.gradleProperty("postgresql_version")
 val slf4jVersion = providers.gradleProperty("slf4j_version")
 val xzVersion = providers.gradleProperty("xz_version")
@@ -33,7 +32,6 @@ version = projectVersion.get()
 
 repositories { mavenCentral() }
 
-val mockitoAgent by configurations.creating
 dependencies {
     dokkaPlugin("org.jetbrains.dokka:kotlin-as-java-plugin:${dokkaVersion.get()}")
 
@@ -55,9 +53,6 @@ dependencies {
     testImplementation("org.liquibase:liquibase-core:${liquibaseVersion.get()}")
     testImplementation(platform("org.junit:junit-bom:${junitVersion.get()}"))
     testImplementation("org.junit.jupiter:junit-jupiter")
-    testImplementation("org.mockito:mockito-core:${mockitoVersion.get()}")
-
-    mockitoAgent("org.mockito:mockito-core:${mockitoVersion.get()}") { isTransitive = false }
 
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testRuntimeOnly("org.slf4j:slf4j-simple:${slf4jVersion.get()}")
@@ -69,12 +64,6 @@ java {
     withSourcesJar()
     withJavadocJar()
 }
-abstract class MockitoAgentArgs @Inject constructor(objects: ObjectFactory) : CommandLineArgumentProvider {
-    @get:InputFiles
-    @get:PathSensitive(PathSensitivity.RELATIVE)
-    val agentFiles: ConfigurableFileCollection = objects.fileCollection()
-    override fun asArguments(): Iterable<String> = agentFiles.files.map { "-javaagent:${it.absolutePath}" }
-}
 tasks {
     withType<JavaCompile>().configureEach {
         options.encoding = "UTF-8"
@@ -85,8 +74,6 @@ tasks {
     withType<JavaExec>().configureEach { defaultCharacterEncoding = "UTF-8" }
     withType<Javadoc>().configureEach { options.encoding = "UTF-8" }
     withType<Test>().configureEach {
-        val provider = objects.newInstance(MockitoAgentArgs::class.java).apply { agentFiles.from(mockitoAgent) }
-        jvmArgumentProviders.add(provider)
         defaultCharacterEncoding = "UTF-8"
         useJUnitPlatform()
     }

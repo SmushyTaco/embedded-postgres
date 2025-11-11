@@ -37,7 +37,6 @@ import java.util.function.Consumer;
  * and is automatically stopped after each test completes.
  */
 public class SingleInstancePostgresExtension implements AfterTestExecutionCallback, BeforeTestExecutionCallback {
-
     private volatile EmbeddedPostgres epg;
     private volatile Connection postgresConnection;
     private final List<Consumer<EmbeddedPostgres.Builder>> builderCustomizers = new CopyOnWriteArrayList<>();
@@ -45,7 +44,7 @@ public class SingleInstancePostgresExtension implements AfterTestExecutionCallba
     SingleInstancePostgresExtension() {}
 
     @Override
-    public void beforeTestExecution(@NonNull ExtensionContext extensionContext) throws Exception {
+    public void beforeTestExecution(@NonNull final ExtensionContext extensionContext) throws SQLException, IOException {
         epg = pg();
         postgresConnection = epg.getPostgresDatabase().getConnection();
     }
@@ -68,10 +67,8 @@ public class SingleInstancePostgresExtension implements AfterTestExecutionCallba
      * @throws AssertionError if the embedded PostgreSQL instance has already been started
      */
     @SuppressWarnings("unused")
-    public SingleInstancePostgresExtension customize(Consumer<EmbeddedPostgres.Builder> customizer) {
-        if (epg != null) {
-            throw new AssertionError("already started");
-        }
+    public SingleInstancePostgresExtension customize(final Consumer<EmbeddedPostgres.Builder> customizer) {
+        if (epg != null) throw new AssertionError("already started");
         builderCustomizers.add(customizer);
         return this;
     }
@@ -86,23 +83,21 @@ public class SingleInstancePostgresExtension implements AfterTestExecutionCallba
      * @throws AssertionError if the extension has not been started yet
      */
     public EmbeddedPostgres getEmbeddedPostgres() {
-        EmbeddedPostgres theEpg = this.epg;
-        if (theEpg == null) {
-            throw new AssertionError("JUnit test not started yet!");
-        }
+        final EmbeddedPostgres theEpg = this.epg;
+        if (theEpg == null) throw new AssertionError("JUnit test not started yet!");
         return theEpg;
     }
 
     @Override
-    public void afterTestExecution(@NonNull ExtensionContext extensionContext) {
+    public void afterTestExecution(@NonNull final ExtensionContext extensionContext) {
         try {
             postgresConnection.close();
-        } catch (SQLException e) {
+        } catch (final SQLException e) {
             throw new AssertionError(e);
         }
         try {
             epg.close();
-        } catch (IOException e) {
+        } catch (final IOException e) {
             throw new AssertionError(e);
         }
     }

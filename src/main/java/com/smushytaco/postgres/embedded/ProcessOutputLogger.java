@@ -24,8 +24,6 @@ import java.io.InputStreamReader;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 
-import static org.apache.commons.lang3.StringUtils.isNotBlank;
-
 /**
  * Read standard output of process and write lines to given {@link Logger} as INFO;
  * depends on {@link ProcessBuilder#redirectErrorStream(boolean)} being set to {@code true} (since only stdout is
@@ -63,17 +61,17 @@ final class ProcessOutputLogger implements Runnable {
     }
 
     static void logOutput(final Logger logger, final Process process, final String processName) {
-        final String threadName = (isNotBlank(processName) ? processName : "unknown") + ":" + processId(process);
+        final String threadName = (processName != null && !processName.isBlank() ? processName : "unknown") + ":" + processId(process);
         final Thread t = new Thread(new ProcessOutputLogger(logger, process));
         t.setName(threadName);
         t.setDaemon(true);
         t.start();
     }
 
-    private static String processId(Process process) {
+    private static String processId(final Process process) {
         try {
             return "pid(" + process.pid() + ")";
-        } catch (UnsupportedOperationException _) {
+        } catch (final UnsupportedOperationException _) {
             return "id(" + process.hashCode() + ")";
         }
     }

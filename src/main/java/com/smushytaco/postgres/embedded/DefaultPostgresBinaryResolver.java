@@ -42,7 +42,6 @@ import static java.lang.String.format;
  * It also includes fallback behavior for unsupported or emulated architectures.
  */
 public class DefaultPostgresBinaryResolver implements PgBinaryResolver {
-
     private static final Logger logger = LoggerFactory.getLogger(DefaultPostgresBinaryResolver.class);
 
     /**
@@ -56,15 +55,14 @@ public class DefaultPostgresBinaryResolver implements PgBinaryResolver {
     private DefaultPostgresBinaryResolver() {}
 
     @Override
-    public InputStream getPgBinary(String system, String machineHardware) throws IOException {
-        String architecture = ArchUtils.normalize(machineHardware);
-        String distribution = LinuxUtils.getDistributionName();
+    public InputStream getPgBinary(final String system, final String machineHardware) throws IOException {
+        final String architecture = ArchUtils.normalize(machineHardware);
+        final String distribution = LinuxUtils.getDistributionName();
 
-        if (logger.isInfoEnabled())
-            logger.info("Detected distribution: '{}'", Optional.ofNullable(distribution).orElse("Unknown"));
+        if (logger.isInfoEnabled()) logger.info("Detected distribution: '{}'", Optional.ofNullable(distribution).orElse("Unknown"));
 
         if (distribution != null) {
-            Resource resource = findPgBinary(normalize(format("postgres-%s-%s-%s.txz", system, architecture, distribution)));
+            final Resource resource = findPgBinary(normalize(format("postgres-%s-%s-%s.txz", system, architecture, distribution)));
             if (resource != null) {
                 logger.info("Distribution specific postgres binaries found: '{}'", resource.getFilename());
                 return resource.getInputStream();
@@ -97,45 +95,38 @@ public class DefaultPostgresBinaryResolver implements PgBinaryResolver {
         throw new IllegalStateException("Missing embedded postgres binaries");
     }
 
-    private static Resource findPgBinary(String resourceLocation) throws IOException {
+    private static Resource findPgBinary(final String resourceLocation) throws IOException {
         logger.trace("Searching for postgres binaries - location: '{}'", resourceLocation);
-        ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
-        List<URL> urls = Collections.list(classLoader.getResources(resourceLocation));
+        final ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
+        final List<URL> urls = Collections.list(classLoader.getResources(resourceLocation));
 
         if (urls.size() > 1) {
             logger.error("Detected multiple binaries of the same architecture: '{}'", urls);
             throw new IllegalStateException("Duplicate embedded postgres binaries");
         }
-        if (urls.size() == 1) {
-            return new Resource(urls.getFirst());
-        }
+        if (urls.size() == 1) return new Resource(urls.getFirst());
 
         return null;
     }
 
-    private static String normalize(String input) {
-        if (input == null || input.isBlank()) {
-            return input;
-        }
+    private static String normalize(final String input) {
+        if (input == null || input.isBlank()) return input;
         return input.replace(' ', '_').toLowerCase(Locale.ROOT);
     }
 
     private record Resource(URL url) {
-
         public String getFilename() {
-            String path = URLDecoder.decode(url.getPath(), StandardCharsets.UTF_8);
-            int slash = path.lastIndexOf('/');
+            final String path = URLDecoder.decode(url.getPath(), StandardCharsets.UTF_8);
+            final int slash = path.lastIndexOf('/');
             return (slash != -1) ? path.substring(slash + 1) : path;
         }
 
         public InputStream getInputStream() throws IOException {
-            URLConnection con = this.url.openConnection();
+            final URLConnection con = this.url.openConnection();
             try {
                 return con.getInputStream();
-            } catch (IOException ex) {
-                if (con instanceof HttpURLConnection httpURLConnection) {
-                    httpURLConnection.disconnect();
-                }
+            } catch (final IOException ex) {
+                if (con instanceof final HttpURLConnection httpURLConnection) httpURLConnection.disconnect();
                 throw ex;
             }
         }

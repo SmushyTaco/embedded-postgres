@@ -23,8 +23,6 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Locale;
@@ -41,7 +39,6 @@ import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
  * the current environment.
  */
 public final class LinuxUtils {
-
     private static final Logger logger = LoggerFactory.getLogger(LinuxUtils.class);
 
     private static final boolean IS_LINUX = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("linux");
@@ -79,22 +76,17 @@ public final class LinuxUtils {
     }
 
     private static String resolveDistributionName() {
-        if (!IS_LINUX) {
-            return null;
-        }
+        if (!IS_LINUX) return null;
 
         try {
-            Path target;
-            try (InputStream source = LinuxUtils.class.getResourceAsStream("/sh/detect_linux_distribution.sh")) {
+            final Path target;
+            try (final InputStream source = LinuxUtils.class.getResourceAsStream("/sh/detect_linux_distribution.sh")) {
                 target = Files.createTempFile("detect_linux_distribution_", ".sh");
                 Files.copy(Objects.requireNonNull(source), target, REPLACE_EXISTING);
                 target.toFile().deleteOnExit();
             }
 
-            ProcessBuilder builder = new ProcessBuilder();
-            builder.command("sh", target.toAbsolutePath().toString());
-
-            Process process = builder.start();
+            final Process process =  new ProcessBuilder("sh", target.toAbsolutePath().toString()).start();
             process.waitFor();
 
             if (process.exitValue() != 0) {
@@ -102,7 +94,7 @@ public final class LinuxUtils {
             }
 
             String distributionName;
-            try (BufferedReader outputReader = new BufferedReader(new InputStreamReader(process.getInputStream(), UTF_8))) {
+            try (final BufferedReader outputReader = new BufferedReader(new InputStreamReader(process.getInputStream(), UTF_8))) {
                 distributionName = outputReader.readLine();
             }
 
@@ -111,61 +103,62 @@ public final class LinuxUtils {
                 return null;
             }
 
-            if (distributionName.startsWith("Debian")) {
-                distributionName = "Debian";
-            }
-            if (distributionName.equals("openSUSE project")) {
-                distributionName = "openSUSE";
-            }
+            if (distributionName.startsWith("Debian")) distributionName = "Debian";
+            if (distributionName.equals("openSUSE project")) distributionName = "openSUSE";
 
             return distributionName;
-        } catch (IOException e) {
+        } catch (final IOException e) {
             logger.error("It's not possible to detect the name of the Linux distribution", e);
             return null;
-        } catch (InterruptedException e) {
+        } catch (final InterruptedException e) {
             Thread.currentThread().interrupt();
             logger.error("It's not possible to detect the name of the Linux distribution", e);
             return null;
         }
     }
 
-    private static boolean unshareAvailable() {
-        if (!IS_LINUX) {
+    private static boolean isRootUser() {
+        try {
+            final Process process = new ProcessBuilder("id", "-u").start();
+            int exitCode = process.waitFor();
+            if (exitCode != 0) return false;
+
+            try (final BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), UTF_8))) {
+                final String line = reader.readLine();
+                return line != null && line.trim().equals("0");
+            }
+        } catch (final IOException _) {
+            return false;
+        } catch (final InterruptedException _) {
+            Thread.currentThread().interrupt();
             return false;
         }
+    }
+
+
+    private static boolean unshareAvailable() {
+        if (!IS_LINUX) return false;
 
         try {
-            Class<?> clazz = Class.forName("com.sun.security.auth.module.UnixSystem");
-            Object instance = clazz.getDeclaredConstructor().newInstance();
-            Method method = clazz.getDeclaredMethod("getUid");
-            int uid = ((Number) method.invoke(instance)).intValue();
+            if (!isRootUser()) return false;
 
-            if (uid != 0) {
-                return false;
-            }
+            final ProcessBuilder builder = new ProcessBuilder("unshare", "-U", "id", "-u");
 
-            ProcessBuilder builder = new ProcessBuilder();
-            builder.command("unshare", "-U", "id", "-u");
-
-            Process process = builder.start();
+            final Process process = builder.start();
             process.waitFor();
 
-            try (BufferedReader outputReader = new BufferedReader(new InputStreamReader(process.getInputStream(), UTF_8))) {
+            try (final BufferedReader outputReader = new BufferedReader(new InputStreamReader(process.getInputStream(), UTF_8))) {
                 if (process.exitValue() == 0 && !"0".equals(outputReader.readLine())) {
                     builder.command("unshare", "-U", "id", "-un");
-                    Process nameprocess = builder.start();
-                    nameprocess.waitFor();
-                    if (nameprocess.exitValue() == 0) {
-                        return true;
-                    }
+                    final Process nameProcess = builder.start();
+                    nameProcess.waitFor();
+                    if (nameProcess.exitValue() == 0) return true;
                 }
             }
-
             return false;
-        } catch (IOException | ClassNotFoundException | InvocationTargetException | InstantiationException |
-                    IllegalAccessException | NoSuchMethodException _) {
+        } catch (final IOException _) {
             return false;
-        }  catch (InterruptedException _) {
+        }  catch (final InterruptedException _) {
             Thread.currentThread().interrupt();
             return false;
         }
