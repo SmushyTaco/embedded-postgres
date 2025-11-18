@@ -26,15 +26,18 @@ Excellent for allowing you to unit test with a "real" Postgres without requiring
 
 To use this with Gradle, add the following to your `build.gradle.kts`:
 ```kotlin
-val embeddedPostgresVersion = providers.gradleProperty("embedded_postgres_version")
 dependencies {
-    testImplementation("com.smushytaco:embedded-postgres:${embeddedPostgresVersion.get()}")
+    testImplementation(libs.embeddedPostgres)
 }
 ```
-And the following to your `gradle.properties`:
-```properties
+And the following to your `gradle/libs.versions.toml`:
+```toml
+[versions]
 # Check this on https://central.sonatype.com/artifact/com.smushytaco/embedded-postgres/
-embedded_postgres_version = 3.0.2
+embeddedPostgres = "3.0.2"
+
+[libraries]
+embeddedPostgres = { group = "com.smushytaco", name = "embedded-postgres", version.ref = "embeddedPostgres" }
 ```
 
 The default version of the embedded postgres is `PostgreSQL 18.1.0`, but you can change it by following the instructions described in [Postgres version](#postgres-version).
@@ -79,16 +82,19 @@ The default version of the embedded postgres is `PostgreSQL 18.1.0`, but it can 
 
 Add the following to your `build.gradle.kts`;
 ```kotlin
-val postgresqlVersion = providers.gradleProperty("postgresql_version")
 dependencies {
-    testImplementation(enforcedPlatform("io.zonky.test.postgres:embedded-postgres-binaries-bom:${postgresqlVersion.get()}"))
+    testImplementation(enforcedPlatform(libs.postgresql))
 }
 ```
 
-And the following to your `gradle.properties`:
-```properties
+And the following to your `gradle/libs.versions.toml`:
+```toml
+[versions]
 # Check this on https://central.sonatype.com/artifact/io.zonky.test.postgres/embedded-postgres-binaries-bom/
-postgresql_version = 18.1.0
+postgresql = "18.1.0"
+
+[libraries]
+postgresql = { group = "io.zonky.test.postgres", name = "embedded-postgres-binaries-bom", version.ref = "postgresql" }
 ```
 
 A list of all available versions of postgres binaries can be found [here](https://central.sonatype.com/artifact/io.zonky.test.postgres/embedded-postgres-binaries-bom/).
@@ -100,10 +106,17 @@ Note that the release cycle of the postgres binaries is independent of the relea
 By default, only the support for `amd64` architecture is enabled.
 Support for other architectures can be enabled by adding the corresponding Maven dependencies as shown in the example below:
 
+Add the following to your `build.gradle.kts`;
 ```kotlin
 dependencies {
-    testImplementation("io.zonky.test.postgres:embedded-postgres-binaries-linux-i386")
+    testImplementation(libs.embeddedPostgresBinaries.linux.i386)
 }
+```
+
+And the following to your `gradle/libs.versions.toml`:
+```toml
+[libraries]
+embeddedPostgresBinaries-linux-i386 = { group = "io.zonky.test.postgres", name = "embedded-postgres-binaries-linux-i386" }
 ```
 
 **Supported platforms:** `Darwin`, `Windows`, `Linux`, `Alpine Linux`  
