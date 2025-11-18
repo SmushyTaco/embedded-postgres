@@ -13,6 +13,7 @@ val projectGroup = providers.gradleProperty("group")
 val projectVersion = providers.gradleProperty("version")
 
 val javaVersion = providers.gradleProperty("java_version")
+val gradleJavaVersion = providers.gradleProperty("gradle_java_version")
 
 val embeddedPostgresBinariesVersion = providers.gradleProperty("embedded_postgres_binaries_version")
 val commonsCompressVersion = providers.gradleProperty("commons_compress_version")
@@ -58,7 +59,10 @@ dependencies {
     testRuntimeOnly("org.slf4j:slf4j-simple:${slf4jVersion.get()}")
 }
 java {
-    toolchain.languageVersion = JavaLanguageVersion.of(javaVersion.get())
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(javaVersion.get().toInt())
+        vendor = JvmVendorSpec.ADOPTIUM
+    }
     sourceCompatibility = JavaVersion.toVersion(javaVersion.get().toInt())
     targetCompatibility = JavaVersion.toVersion(javaVersion.get().toInt())
     withSourcesJar()
@@ -69,7 +73,11 @@ tasks {
         options.encoding = "UTF-8"
         sourceCompatibility = javaVersion.get()
         targetCompatibility = javaVersion.get()
-        options.release = javaVersion.get().toInt()
+        if (javaVersion.get().toInt() > 8) options.release = javaVersion.get().toInt()
+    }
+    named<UpdateDaemonJvm>("updateDaemonJvm") {
+        languageVersion = JavaLanguageVersion.of(gradleJavaVersion.get().toInt())
+        vendor = JvmVendorSpec.ADOPTIUM
     }
     withType<JavaExec>().configureEach { defaultCharacterEncoding = "UTF-8" }
     withType<Javadoc>().configureEach { options.encoding = "UTF-8" }
