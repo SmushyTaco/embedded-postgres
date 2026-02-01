@@ -8,24 +8,24 @@ plugins {
     alias(libs.plugins.nmcp)
 }
 
-val projectName = providers.gradleProperty("name")
-val projectGroup = providers.gradleProperty("group")
-val projectVersion = providers.gradleProperty("version")
-val projectDescription = providers.gradleProperty("description")
+val projectName: Provider<String> = providers.gradleProperty("name")
+val projectGroup: Provider<String> = providers.gradleProperty("group")
+val projectVersion: Provider<String> = providers.gradleProperty("version")
+val projectDescription: Provider<String> = providers.gradleProperty("description")
 
-val publishingUrl = providers.gradleProperty("url")
+val publishingUrl: Provider<String> = providers.gradleProperty("url")
 
-val licenseName = providers.gradleProperty("license_name")
-val licenseUrl = providers.gradleProperty("license_url")
-val licenseDistribution = providers.gradleProperty("license_distribution")
+val licenseName: Provider<String> = providers.gradleProperty("license_name")
+val licenseUrl: Provider<String> = providers.gradleProperty("license_url")
+val licenseDistribution: Provider<String> = providers.gradleProperty("license_distribution")
 
-val developerId = providers.gradleProperty("developer_id")
-val developerName = providers.gradleProperty("developer_name")
-val developerEmail = providers.gradleProperty("developer_email")
+val developerId: Provider<String> = providers.gradleProperty("developer_id")
+val developerName: Provider<String> = providers.gradleProperty("developer_name")
+val developerEmail: Provider<String> = providers.gradleProperty("developer_email")
 
-val publishingStrategy = providers.gradleProperty("publishing_strategy")
+val publishingStrategy: Provider<String> = providers.gradleProperty("publishing_strategy")
 
-val javaVersion = libs.versions.java.map { it.toInt() }
+val javaVersion: Provider<Int> = libs.versions.java.map { it.toInt() }
 
 base.archivesName = projectName
 group = projectGroup.get()

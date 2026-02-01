@@ -34,7 +34,7 @@ And the following to your `gradle/libs.versions.toml`:
 ```toml
 [versions]
 # Check this on https://central.sonatype.com/artifact/com.smushytaco/embedded-postgres/
-embeddedPostgres = "3.0.2"
+embeddedPostgres = "3.0.3"
 
 [libraries]
 embeddedPostgres = { group = "com.smushytaco", name = "embedded-postgres", version.ref = "embeddedPostgres" }
