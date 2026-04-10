@@ -34,13 +34,13 @@ And the following to your `gradle/libs.versions.toml`:
 ```toml
 [versions]
 # Check this on https://central.sonatype.com/artifact/com.smushytaco/embedded-postgres/
-embeddedPostgres = "3.0.3"
+embeddedPostgres = "3.1.0"
 
 [libraries]
 embeddedPostgres = { group = "com.smushytaco", name = "embedded-postgres", version.ref = "embeddedPostgres" }
 ```
 
-The default version of the embedded postgres is `PostgreSQL 18.1.0`, but you can change it by following the instructions described in [Postgres version](#postgres-version).
+The default version of the embedded postgres is `PostgreSQL 18.3.0`, but you can change it by following the instructions described in [Postgres version](#postgres-version).
 
 ## Basic Usage
 
@@ -78,7 +78,7 @@ independent databases gives you.
 
 ## Postgres version
 
-The default version of the embedded postgres is `PostgreSQL 18.1.0`, but it can be changed by importing `embedded-postgres-binaries-bom`.
+The default version of the embedded postgres is `PostgreSQL 18.3.0`, but it can be changed by importing `embedded-postgres-binaries-bom`.
 
 Add the following to your `build.gradle.kts`;
 ```kotlin
@@ -91,7 +91,7 @@ And the following to your `gradle/libs.versions.toml`:
 ```toml
 [versions]
 # Check this on https://central.sonatype.com/artifact/io.zonky.test.postgres/embedded-postgres-binaries-bom/
-postgresql = "18.1.0"
+postgresql = "18.3.0"
 
 [libraries]
 postgresql = { group = "io.zonky.test.postgres", name = "embedded-postgres-binaries-bom", version.ref = "postgresql" }
