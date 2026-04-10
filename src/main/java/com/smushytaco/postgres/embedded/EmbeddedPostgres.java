@@ -93,14 +93,14 @@ public class EmbeddedPostgres implements Closeable {
     private final ProcessBuilder.Redirect outputRedirector;
 
     @SuppressWarnings("unused")
-    EmbeddedPostgres(final Path parentDirectory, final Path dataDirectory, final boolean cleanDataDirectory, boolean registerShutdownHook,
+    EmbeddedPostgres(final Path parentDirectory, final Path dataDirectory, final boolean cleanDataDirectory, final boolean registerShutdownHook,
                      final Map<String, String> postgresConfig, final Map<String, String> localeConfig, final int port, final Map<String, String> connectConfig,
                      final PgBinaryResolver pgBinaryResolver, final ProcessBuilder.Redirect errorRedirector, final ProcessBuilder.Redirect outputRedirector) throws IOException {
         this(parentDirectory, dataDirectory, cleanDataDirectory, registerShutdownHook, postgresConfig, localeConfig, port, connectConfig,
                 pgBinaryResolver, errorRedirector, outputRedirector, DEFAULT_PG_STARTUP_WAIT, null, null);
     }
 
-    EmbeddedPostgres(final Path parentDirectory, final Path dataDirectory, final boolean cleanDataDirectory, boolean registerShutdownHook,
+    EmbeddedPostgres(final Path parentDirectory, final Path dataDirectory, final boolean cleanDataDirectory, final boolean registerShutdownHook,
                      final Map<String, String> postgresConfig, final Map<String, String> localeConfig, final int port, final Map<String, String> connectConfig,
                      final PgBinaryResolver pgBinaryResolver, final ProcessBuilder.Redirect errorRedirector,
                      final ProcessBuilder.Redirect outputRedirector, final Duration pgStartupWait,
