@@ -240,6 +240,7 @@ public class PreparedDbProvider implements AutoCloseable {
     }
 
     private void ensureOpen() {
+        if (sharedCluster.closed.get()) closed.set(true);
         if (closed.get()) throw new IllegalStateException("PreparedDbProvider has been closed");
     }
 

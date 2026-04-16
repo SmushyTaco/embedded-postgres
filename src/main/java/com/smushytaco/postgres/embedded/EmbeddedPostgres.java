@@ -42,6 +42,7 @@ import java.util.*;
 import java.util.Map.Entry;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
@@ -91,6 +92,8 @@ public class EmbeddedPostgres implements Closeable {
 
     private final ProcessBuilder.Redirect errorRedirector;
     private final ProcessBuilder.Redirect outputRedirector;
+
+    private final AtomicReference<Thread> shutdownHook = new AtomicReference<>();
 
     @SuppressWarnings("unused")
     EmbeddedPostgres(final Path parentDirectory, final Path dataDirectory, final boolean cleanDataDirectory, final boolean registerShutdownHook,
@@ -285,7 +288,11 @@ public class EmbeddedPostgres implements Closeable {
                 "-w", "start"
         ));
 
-        if (registerShutdownHook) Runtime.getRuntime().addShutdownHook(newCloserThread());
+        if (registerShutdownHook) {
+            final Thread hook = newCloserThread();
+            Runtime.getRuntime().addShutdownHook(hook);
+            shutdownHook.set(hook);
+        }
 
         system(pgCtl, args, pgStartupWait);
 
@@ -346,6 +353,7 @@ public class EmbeddedPostgres implements Closeable {
     @Override
     public void close() throws IOException {
         if (closed.getAndSet(true)) return;
+        unregisterShutdownHook();
         final Instant start = Instant.now();
         try {
             pgCtl(dataDirectory, "stop");
@@ -372,6 +380,19 @@ public class EmbeddedPostgres implements Closeable {
             }
         } else {
             LOG.info("Did not clean up directory {}", dataDirectory.toAbsolutePath());
+        }
+    }
+
+    private void unregisterShutdownHook() {
+        final Thread currentShutdownHook = shutdownHook.getAndSet(null);
+        if (currentShutdownHook == null || Thread.currentThread() == currentShutdownHook) return;
+
+        try {
+            Runtime.getRuntime().removeShutdownHook(currentShutdownHook);
+        } catch (final IllegalStateException e) {
+            LOG.trace("JVM is already shutting down; could not remove shutdown hook {}", currentShutdownHook.getName(), e);
+        } catch (final Exception e) {
+            LOG.warn("Failed to remove shutdown hook {}", currentShutdownHook.getName(), e);
         }
     }
 
