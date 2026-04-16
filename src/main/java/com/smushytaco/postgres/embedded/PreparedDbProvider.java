@@ -31,8 +31,6 @@ import java.util.concurrent.SynchronousQueue;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
-import static java.util.Collections.emptyMap;
-import static java.util.Collections.unmodifiableMap;
 
 /**
  * Provider for prepared PostgreSQL databases backed by an {@link EmbeddedPostgres}
@@ -40,19 +38,18 @@ import static java.util.Collections.unmodifiableMap;
  * <p>
  * Databases are created from a shared template cluster, allowing fast creation
  * of isolated schemas for tests or other ephemeral use-cases.
+ * <p>
+ * Each provider instance acts as a handle to a managed shared cluster rather than
+ * directly owning the lifecycle of the underlying preparer pipeline.
  */
 public class PreparedDbProvider {
     private static final String JDBC_FORMAT = "jdbc:postgresql://localhost:%d/%s?user=%s";
     private static final String ALPHABET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
-    /**
-     * Each database cluster's <code>template1</code> database has a unique set of schema
-     * loaded so that the databases may be cloned.
-     */
-    private static final Map<ClusterKey, PrepPipeline> CLUSTERS = new HashMap<>();
+    private static final ClusterManager CLUSTER_MANAGER = new ClusterManager();
 
-    private final PrepPipeline dbPreparer;
+    private final SharedCluster sharedCluster;
 
     /**
      * Creates a {@link PreparedDbProvider} for the given {@link DatabasePreparer}
@@ -81,29 +78,10 @@ public class PreparedDbProvider {
 
     private PreparedDbProvider(final DatabasePreparer preparer, final Iterable<Consumer<Builder>> customizers) {
         try {
-            dbPreparer = createOrFindPreparer(preparer, customizers);
+            sharedCluster = CLUSTER_MANAGER.createOrFindPreparer(preparer, customizers);
         } catch (final IOException | SQLException e) {
             throw new RuntimeException(e);
         }
-    }
-
-    /**
-     * Each schema set has its own database cluster.  The template1 database has the schema preloaded so that
-     * each test case need only create a new database and not re-invoke your preparer.
-     */
-    private static synchronized PrepPipeline createOrFindPreparer(final DatabasePreparer preparer, final Iterable<Consumer<Builder>> customizers) throws IOException, SQLException {
-        final ClusterKey key = new ClusterKey(preparer, customizers);
-        PrepPipeline result = CLUSTERS.get(key);
-        if (result != null) return result;
-
-        final Builder builder = EmbeddedPostgres.builder();
-        customizers.forEach(c -> c.accept(builder));
-        final EmbeddedPostgres pg = builder.start();
-        preparer.prepare(pg.getTemplateDatabase());
-
-        result = new PrepPipeline(pg).start();
-        CLUSTERS.put(key, result);
-        return result;
     }
 
     /**
@@ -126,7 +104,7 @@ public class PreparedDbProvider {
      * NB: No two invocations will return the same database.
      */
     private DbInfo createNewDB() throws SQLException {
-        return dbPreparer.getNextDb();
+        return sharedCluster.getNextDb();
     }
 
     /**
@@ -183,7 +161,7 @@ public class PreparedDbProvider {
         final String additionalParameters = db.getProperties().entrySet().stream()
                 .map(e -> String.format("&%s=%s", e.getKey(), e.getValue()))
                 .collect(Collectors.joining());
-        return String.format(JDBC_FORMAT, db.port, db.dbName, db.user) + additionalParameters;
+        return String.format(JDBC_FORMAT, db.getPort(), db.getDbName(), db.getUser()) + additionalParameters;
     }
 
     /**
@@ -199,26 +177,69 @@ public class PreparedDbProvider {
      */
     @SuppressWarnings("unused")
     public Map<String, String> getConfigurationTweak(final String dbModuleName) throws SQLException {
-        final DbInfo db = dbPreparer.getNextDb();
+        final DbInfo db = sharedCluster.getNextDb();
         final Map<String, String> result = new HashMap<>();
         result.put("ot.db." + dbModuleName + ".uri", getJdbcUri(db));
-        result.put("ot.db." + dbModuleName + ".ds.user", db.user);
+        result.put("ot.db." + dbModuleName + ".ds.user", db.getUser());
         return result;
+    }
+
+    /**
+     * Coordinates access to shared prepared database clusters.
+     */
+    private static final class ClusterManager {
+        private final Map<ClusterKey, SharedCluster> clusters = new HashMap<>();
+
+        /**
+         * Each schema set has its own database cluster. The template1 database has the schema preloaded so that
+         * each test case need only create a new database and not re-invoke the preparer.
+         */
+        private synchronized SharedCluster createOrFindPreparer(final DatabasePreparer preparer, final Iterable<Consumer<Builder>> customizers) throws IOException, SQLException {
+            final ClusterKey key = new ClusterKey(preparer, customizers);
+            final SharedCluster result = clusters.get(key);
+            if (result != null) return result;
+
+            final Builder builder = EmbeddedPostgres.builder();
+            customizers.forEach(c -> c.accept(builder));
+            final EmbeddedPostgres pg = builder.start();
+            preparer.prepare(pg.getTemplateDatabase());
+
+            final SharedCluster created = new SharedCluster(key, new PrepPipeline(pg).start());
+            clusters.put(key, created);
+            return created;
+        }
+    }
+
+    /**
+     * Represents a managed shared prepared cluster.
+     */
+    private static final class SharedCluster {
+        private final ClusterKey key;
+        private final PrepPipeline preparerPipeline;
+
+        private SharedCluster(final ClusterKey key, final PrepPipeline preparerPipeline) {
+            this.key = key;
+            this.preparerPipeline = preparerPipeline;
+        }
+
+        private DbInfo getNextDb() throws SQLException {
+            return preparerPipeline.getNextDb();
+        }
     }
 
     /**
      * Spawns a background thread that prepares databases ahead of time for speed, and then uses a
      * synchronous queue to hand the prepared databases off to test cases.
      */
-    private static class PrepPipeline implements Runnable {
+    private static final class PrepPipeline implements Runnable {
         private final EmbeddedPostgres pg;
         private final SynchronousQueue<DbInfo> nextDatabase = new SynchronousQueue<>();
 
-        PrepPipeline(final EmbeddedPostgres pg) {
+        private PrepPipeline(final EmbeddedPostgres pg) {
             this.pg = pg;
         }
 
-        PrepPipeline start() {
+        private PrepPipeline start() {
             final Thread t = new Thread(this);
             t.setDaemon(true); // so it doesn't block JVM shutdown
             t.setName("cluster-" + pg + "-preparer");
@@ -226,11 +247,10 @@ public class PreparedDbProvider {
             return this;
         }
 
-
-        DbInfo getNextDb() throws SQLException {
+        private DbInfo getNextDb() throws SQLException {
             try {
                 final DbInfo next = nextDatabase.take();
-                if (next.ex != null) throw next.ex;
+                if (next.getException() != null) throw next.getException();
                 return next;
             } catch (final InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -284,136 +304,15 @@ public class PreparedDbProvider {
         }
     }
 
-    private static class ClusterKey {
-
-        private final DatabasePreparer preparer;
-        private final Builder builder;
-
-        ClusterKey(final DatabasePreparer preparer, final Iterable<Consumer<Builder>> customizers) {
-            this.preparer = preparer;
-            this.builder = EmbeddedPostgres.builder();
-            customizers.forEach(c -> c.accept(this.builder));
+    private record ClusterKey(DatabasePreparer preparer, Builder builder) {
+        private ClusterKey(final DatabasePreparer preparer, final Iterable<Consumer<Builder>> customizers) {
+            this(preparer, createBuilder(customizers));
         }
 
-        @Override
-        public boolean equals(final Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
-            final ClusterKey that = (ClusterKey) o;
-            return Objects.equals(preparer, that.preparer) && Objects.equals(builder, that.builder);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(preparer, builder);
-        }
-    }
-
-    /**
-     * Holds metadata about a created database, including its name, port, user,
-     * optional connection properties, and any failure that occurred during
-     * creation.
-     */
-    @SuppressWarnings("ClassCanBeRecord")
-    public static class DbInfo {
-        /**
-         * Creates a successful {@link DbInfo} instance without additional
-         * connection properties.
-         *
-         * @param dbName the name of the created database
-         * @param port   the port on which PostgreSQL is listening
-         * @param user   the database user that owns the database
-         * @return a {@link DbInfo} representing a successful creation
-         */
-        @SuppressWarnings("unused")
-        public static DbInfo ok(final String dbName, final int port, final String user) {
-            return ok(dbName, port, user, emptyMap());
-        }
-
-        private static DbInfo ok(final String dbName, final int port, final String user, final Map<String, String> properties) {
-            return new DbInfo(dbName, port, user, properties, null);
-        }
-
-        /**
-         * Creates a {@link DbInfo} instance representing a failed attempt
-         * to create a database.
-         *
-         * @param e the {@link SQLException} describing the failure
-         * @return a {@link DbInfo} containing the failure information
-         */
-        public static DbInfo error(final SQLException e) {
-            return new DbInfo(null, -1, null, emptyMap(), e);
-        }
-
-        private final String dbName;
-        private final int port;
-        private final String user;
-        private final Map<String, String> properties;
-        private final SQLException ex;
-
-        private DbInfo(final String dbName, final int port, final String user, final Map<String, String> properties, final SQLException e) {
-            this.dbName = dbName;
-            this.port = port;
-            this.user = user;
-            this.properties = properties;
-            this.ex = e;
-        }
-
-        /**
-         * Returns the port of the PostgreSQL instance backing this database.
-         *
-         * @return the PostgreSQL port
-         */
-        public int getPort() {
-            return port;
-        }
-
-        /**
-         * Returns the name of the database.
-         *
-         * @return the database name, or {@code null} if creation failed
-         */
-        public String getDbName() {
-            return dbName;
-        }
-
-        /**
-         * Returns the user associated with this database.
-         *
-         * @return the database user, or {@code null} if creation failed
-         */
-        public String getUser() {
-            return user;
-        }
-
-        /**
-         * Returns an unmodifiable view of the connection properties
-         * associated with this database.
-         *
-         * @return connection properties, never {@code null}
-         */
-        public Map<String, String> getProperties() {
-            return unmodifiableMap(properties);
-        }
-
-        /**
-         * Returns the {@link SQLException} that occurred during database
-         * creation, if any.
-         *
-         * @return the exception that caused creation to fail, or {@code null} on success
-         */
-        @SuppressWarnings("unused")
-        public SQLException getException() {
-            return ex;
-        }
-
-        /**
-         * Indicates whether the database was created successfully.
-         *
-         * @return {@code true} if creation succeeded, {@code false} otherwise
-         */
-        public boolean isSuccess() {
-            return ex == null;
+        private static Builder createBuilder(final Iterable<Consumer<Builder>> customizers) {
+            final Builder builder = EmbeddedPostgres.builder();
+            customizers.forEach(c -> c.accept(builder));
+            return builder;
         }
     }
 }
