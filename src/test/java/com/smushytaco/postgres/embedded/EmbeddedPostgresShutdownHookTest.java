@@ -22,9 +22,7 @@ import java.io.IOException;
 import java.lang.reflect.Field;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.*;
 
 class EmbeddedPostgresShutdownHookTest {
     @Test

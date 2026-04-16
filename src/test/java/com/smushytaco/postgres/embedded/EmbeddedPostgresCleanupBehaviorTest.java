@@ -36,9 +36,7 @@ import java.time.Instant;
 import java.util.HexFormat;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 @ResourceLock(value = "ot.epg.working-dir", mode = ResourceAccessMode.READ_WRITE)
 class EmbeddedPostgresCleanupBehaviorTest {
