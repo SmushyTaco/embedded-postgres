@@ -28,9 +28,9 @@ import java.sql.SQLException;
 import java.util.*;
 import java.util.Map.Entry;
 import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
-
 
 /**
  * Provider for prepared PostgreSQL databases backed by an {@link EmbeddedPostgres}
@@ -42,7 +42,7 @@ import java.util.stream.Collectors;
  * Each provider instance acts as a handle to a managed shared cluster rather than
  * directly owning the lifecycle of the underlying preparer pipeline.
  */
-public class PreparedDbProvider {
+public class PreparedDbProvider implements AutoCloseable {
     private static final String JDBC_FORMAT = "jdbc:postgresql://localhost:%d/%s?user=%s";
     private static final String ALPHABET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
@@ -50,6 +50,7 @@ public class PreparedDbProvider {
     private static final ClusterManager CLUSTER_MANAGER = new ClusterManager();
 
     private final SharedCluster sharedCluster;
+    private final AtomicBoolean closed = new AtomicBoolean();
 
     /**
      * Creates a {@link PreparedDbProvider} for the given {@link DatabasePreparer}
@@ -78,7 +79,7 @@ public class PreparedDbProvider {
 
     private PreparedDbProvider(final DatabasePreparer preparer, final Iterable<Consumer<Builder>> customizers) {
         try {
-            sharedCluster = CLUSTER_MANAGER.createOrFindPreparer(preparer, customizers);
+            sharedCluster = CLUSTER_MANAGER.acquireCluster(preparer, customizers);
         } catch (final IOException | SQLException e) {
             throw new RuntimeException(e);
         }
@@ -104,6 +105,7 @@ public class PreparedDbProvider {
      * NB: No two invocations will return the same database.
      */
     private DbInfo createNewDB() throws SQLException {
+        ensureOpen();
         return sharedCluster.getNextDb();
     }
 
@@ -177,11 +179,30 @@ public class PreparedDbProvider {
      */
     @SuppressWarnings("unused")
     public Map<String, String> getConfigurationTweak(final String dbModuleName) throws SQLException {
+        ensureOpen();
         final DbInfo db = sharedCluster.getNextDb();
         final Map<String, String> result = new HashMap<>();
         result.put("ot.db." + dbModuleName + ".uri", getJdbcUri(db));
         result.put("ot.db." + dbModuleName + ".ds.user", db.getUser());
         return result;
+    }
+
+    /**
+     * Releases this provider's handle to the shared prepared cluster.
+     * <p>
+     * When the last provider referencing the cluster is closed, the underlying
+     * preparer pipeline and embedded PostgreSQL instance are also closed.
+     *
+     * @throws IOException if the underlying cluster cannot be closed cleanly
+     */
+    @Override
+    public void close() throws IOException {
+        if (closed.getAndSet(true)) return;
+        CLUSTER_MANAGER.release(sharedCluster);
+    }
+
+    private void ensureOpen() {
+        if (closed.get()) throw new IllegalStateException("PreparedDbProvider has been closed");
     }
 
     /**
@@ -193,37 +214,102 @@ public class PreparedDbProvider {
         /**
          * Each schema set has its own database cluster. The template1 database has the schema preloaded so that
          * each test case need only create a new database and not re-invoke the preparer.
+         *
+         * @param preparer the preparer used to initialize the cluster template
+         * @param customizers customizations to apply to the embedded Postgres builder
+         * @return a shared cluster for the given preparer configuration
+         * @throws IOException if the embedded PostgreSQL instance cannot be started or closed cleanly on failure
+         * @throws SQLException if the preparer fails while initializing the template database
          */
-        private synchronized SharedCluster createOrFindPreparer(final DatabasePreparer preparer, final Iterable<Consumer<Builder>> customizers) throws IOException, SQLException {
+        private synchronized SharedCluster acquireCluster(final DatabasePreparer preparer, final Iterable<Consumer<Builder>> customizers) throws IOException, SQLException {
             final ClusterKey key = new ClusterKey(preparer, customizers);
-            final SharedCluster result = clusters.get(key);
-            if (result != null) return result;
+            final SharedCluster existing = clusters.get(key);
+            if (existing != null) {
+                existing.acquire();
+                return existing;
+            }
 
             final Builder builder = EmbeddedPostgres.builder();
             customizers.forEach(c -> c.accept(builder));
             final EmbeddedPostgres pg = builder.start();
-            preparer.prepare(pg.getTemplateDatabase());
-
+            try {
+                preparer.prepare(pg.getTemplateDatabase());
+            } catch (SQLException | RuntimeException e) {
+                try {
+                    pg.close();
+                } catch (final IOException closeException) {
+                    e.addSuppressed(closeException);
+                }
+                throw e;
+            }
             final SharedCluster created = new SharedCluster(key, new PrepPipeline(pg).start());
             clusters.put(key, created);
             return created;
+        }
+
+        /**
+         * Releases a shared cluster previously acquired by a provider.
+         *
+         * @param sharedCluster the shared cluster to release
+         * @throws IOException if closing the last remaining cluster handle fails
+         */
+        private void release(final SharedCluster sharedCluster) throws IOException {
+            final SharedCluster clusterToClose;
+            synchronized (this) {
+                if (sharedCluster.release() == 0) {
+                    clusters.remove(sharedCluster.getKey(), sharedCluster);
+                    clusterToClose = sharedCluster;
+                } else {
+                    clusterToClose = null;
+                }
+            }
+
+            if (clusterToClose != null) clusterToClose.close();
         }
     }
 
     /**
      * Represents a managed shared prepared cluster.
      */
-    private static final class SharedCluster {
+    private static final class SharedCluster implements AutoCloseable {
         private final ClusterKey key;
         private final PrepPipeline preparerPipeline;
+        private int refCount = 1;
+        private final AtomicBoolean closed = new AtomicBoolean();
 
         private SharedCluster(final ClusterKey key, final PrepPipeline preparerPipeline) {
             this.key = key;
             this.preparerPipeline = preparerPipeline;
         }
 
+        private void acquire() {
+            if (closed.get()) throw new IllegalStateException("Shared cluster has already been closed");
+            refCount++;
+        }
+
+        private int release() {
+            if (refCount == 0) throw new IllegalStateException("Shared cluster reference count is already zero");
+            return --refCount;
+        }
+
+        private ClusterKey getKey() {
+            return key;
+        }
+
         private DbInfo getNextDb() throws SQLException {
+            if (closed.get()) throw new IllegalStateException("Shared cluster has already been closed");
             return preparerPipeline.getNextDb();
+        }
+
+        /**
+         * Closes the shared cluster and its preparer pipeline.
+         *
+         * @throws IOException if the underlying embedded PostgreSQL instance cannot be closed cleanly
+         */
+        @Override
+        public void close() throws IOException {
+            if (closed.getAndSet(true)) return;
+            preparerPipeline.close();
         }
     }
 
@@ -231,9 +317,11 @@ public class PreparedDbProvider {
      * Spawns a background thread that prepares databases ahead of time for speed, and then uses a
      * synchronous queue to hand the prepared databases off to test cases.
      */
-    private static final class PrepPipeline implements Runnable {
+    private static final class PrepPipeline implements Runnable, AutoCloseable {
         private final EmbeddedPostgres pg;
         private final SynchronousQueue<DbInfo> nextDatabase = new SynchronousQueue<>();
+        private final AtomicBoolean closed = new AtomicBoolean();
+        private Thread runningThread;
 
         private PrepPipeline(final EmbeddedPostgres pg) {
             this.pg = pg;
@@ -243,11 +331,13 @@ public class PreparedDbProvider {
             final Thread t = new Thread(this);
             t.setDaemon(true); // so it doesn't block JVM shutdown
             t.setName("cluster-" + pg + "-preparer");
+            runningThread = t;
             t.start();
             return this;
         }
 
         private DbInfo getNextDb() throws SQLException {
+            if (closed.get()) throw new IllegalStateException("Preparation pipeline has been closed");
             try {
                 final DbInfo next = nextDatabase.take();
                 if (next.getException() != null) throw next.getException();
@@ -282,7 +372,7 @@ public class PreparedDbProvider {
         @SuppressWarnings("java:S2189")
         @Override
         public void run() {
-            while (true) {
+            while (!closed.get()) {
                 final String newDbName = randomAlphabetic(12);
                 SQLException failure = null;
                 try {
@@ -301,6 +391,18 @@ public class PreparedDbProvider {
                     return;
                 }
             }
+        }
+
+        /**
+         * Stops the preparation thread and closes the underlying embedded PostgreSQL instance.
+         *
+         * @throws IOException if the underlying embedded PostgreSQL instance cannot be closed cleanly
+         */
+        @Override
+        public void close() throws IOException {
+            if (closed.getAndSet(true)) return;
+            if (runningThread != null) runningThread.interrupt();
+            pg.close();
         }
     }
 
