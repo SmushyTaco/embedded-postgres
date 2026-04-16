@@ -28,6 +28,7 @@ import org.tukaani.xz.XZInputStream;
 import javax.sql.DataSource;
 import java.io.*;
 import java.net.ServerSocket;
+import java.nio.charset.StandardCharsets;
 import java.nio.ByteBuffer;
 import java.nio.channels.*;
 import java.nio.file.*;
@@ -71,6 +72,7 @@ public class EmbeddedPostgres implements Closeable {
     private static final String PG_SUPERUSER = "postgres";
     private static final Duration DEFAULT_PG_STARTUP_WAIT = Duration.ofSeconds(10);
     private static final String LOCK_FILE_NAME = "epg-lock";
+    private static final String OWNERSHIP_MARKER_FILE_NAME = ".embedded-postgres-owned";
 
     private final Path pgDir;
 
@@ -121,7 +123,7 @@ public class EmbeddedPostgres implements Closeable {
         Objects.requireNonNull(this.pgStartupWait, "Wait time cannot be null");
 
         if (parentDirectory != null) {
-            mkdirs(parentDirectory);
+            makeDirectories(parentDirectory);
             cleanOldDataDirectories(parentDirectory);
             this.dataDirectory = Objects.requireNonNullElseGet(dataDirectory, () -> parentDirectory.resolve(instanceId.toString()));
         } else {
@@ -129,11 +131,12 @@ public class EmbeddedPostgres implements Closeable {
         }
         if (this.dataDirectory == null) throw new IllegalArgumentException("no data directory");
         LOG.trace("{} postgres data directory is {}", instanceId, this.dataDirectory);
-        mkdirs(this.dataDirectory);
+        makeDirectories(this.dataDirectory);
+        markDataDirectoryAsOwned();
 
         final Path lockFile = this.dataDirectory.resolve(LOCK_FILE_NAME);
 
-        if (cleanDataDirectory || Files.notExists(this.dataDirectory.resolve("postgresql.conf"))) initdb();
+        if (cleanDataDirectory || Files.notExists(this.dataDirectory.resolve("postgresql.conf"))) initDb();
 
         this.lockChannel = FileChannel.open(lockFile, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
         this.lock = this.lockChannel.tryLock();
@@ -146,7 +149,7 @@ public class EmbeddedPostgres implements Closeable {
             throw new IllegalStateException("could not lock " + lockFile);
         }
 
-        if (dataDirectoryCustomizer != null) dataDirectoryCustomizer.accept(dataDirectory);
+        if (dataDirectoryCustomizer != null) dataDirectoryCustomizer.accept(this.dataDirectory);
 
         startPostmaster();
     }
@@ -268,14 +271,41 @@ public class EmbeddedPostgres implements Closeable {
         return String.format("%02d:%02d:%02d.%03d", hours, minutes, seconds, millis);
     }
 
-    private void initdb() {
+    private static String ownershipMarkerNameFor(final Path dataDirectory) {
+        final Path normalizedPath = dataDirectory.toAbsolutePath().normalize();
+        try {
+            final MessageDigest messageDigest = MessageDigest.getInstance("SHA-256");
+            final byte[] hash = messageDigest.digest(normalizedPath.toString().getBytes(StandardCharsets.UTF_8));
+            return OWNERSHIP_MARKER_FILE_NAME + "-" + HexFormat.of().formatHex(hash);
+        } catch (final NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 algorithm is not available", e);
+        }
+    }
+
+    private static Path ownershipMarkerPathFor(final Path dataDirectory) {
+        final Path normalizedPath = dataDirectory.toAbsolutePath().normalize();
+        final Path parentDirectory = normalizedPath.getParent();
+        if (parentDirectory == null) throw new IllegalStateException("could not determine parent directory for " + normalizedPath);
+        return parentDirectory.resolve(ownershipMarkerNameFor(normalizedPath));
+    }
+
+    private void markDataDirectoryAsOwned() {
+        final Path ownershipMarker = ownershipMarkerPathFor(dataDirectory);
+        try {
+            Files.writeString(ownershipMarker, dataDirectory.toAbsolutePath().normalize().toString(), StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+        } catch (final IOException e) {
+            throw new IllegalStateException("could not create ownership marker " + ownershipMarker, e);
+        }
+    }
+
+    private void initDb() {
         final Instant start = Instant.now();
         final List<String> args = new ArrayList<>(Arrays.asList(
                 "-A", "trust", "-U", PG_SUPERUSER,
                 "-D", dataDirectory.toString(), "-E", "UTF-8"));
         args.addAll(createLocaleOptions());
         system(initDb, args, null);
-        if (LOG.isInfoEnabled()) LOG.info("{} initdb completed in {}", instanceId, formatElapsedSince(start));
+        if (LOG.isInfoEnabled()) LOG.info("{} initDb completed in {}", instanceId, formatElapsedSince(start));
     }
 
     private void startPostmaster() {
@@ -375,6 +405,7 @@ public class EmbeddedPostgres implements Closeable {
         if (cleanDataDirectory && System.getProperty("ot.epg.no-cleanup") == null) {
             try {
                 deleteDirectoryRecursively(dataDirectory);
+                Files.deleteIfExists(ownershipMarkerPathFor(dataDirectory));
             } catch (final IOException _) {
                 LOG.error("Could not clean up directory {}", dataDirectory.toAbsolutePath());
             }
@@ -406,37 +437,79 @@ public class EmbeddedPostgres implements Closeable {
         system(pgCtl, args, null);
     }
 
-    @SuppressWarnings("java:S1141")
+    @SuppressWarnings({"java:S1141", "java:S1192"})
     private void cleanOldDataDirectories(final Path parentDirectory) {
+        final Path normalizedParentDirectory = parentDirectory.toAbsolutePath().normalize();
         try (final Stream<Path> children = Files.list(parentDirectory)) {
-            for (final Path dir : children.toList()) {
-                if (!Files.isDirectory(dir)) continue;
+            for (final Path ownershipMarker : children.filter(Files::isRegularFile).toList()) {
+                final String fileName = ownershipMarker.getFileName().toString();
+                if (!fileName.startsWith(OWNERSHIP_MARKER_FILE_NAME + "-")) continue;
+
+                final Path dir;
+                try {
+                    final String content = Files.readString(ownershipMarker).trim();
+                    if (content.isEmpty()) {
+                        Files.deleteIfExists(ownershipMarker);
+                        continue;
+                    }
+                    dir = Path.of(content).toAbsolutePath().normalize();
+                } catch (final Exception e) {
+                    LOG.warn("Could not read ownership marker {}", ownershipMarker, e);
+                    continue;
+                }
+
+                if (!Objects.equals(dir.getParent(), normalizedParentDirectory)) {
+                    LOG.warn("Skipping ownership marker {} because it points outside {}", ownershipMarker, normalizedParentDirectory);
+                    continue;
+                }
+
+                if (Files.notExists(dir)) {
+                    try {
+                        Files.deleteIfExists(ownershipMarker);
+                    } catch (final IOException e) {
+                        LOG.warn("Could not remove stale ownership marker {}", ownershipMarker, e);
+                    }
+                    continue;
+                }
 
                 final Path theLockFile = dir.resolve(LOCK_FILE_NAME);
-                if (Files.notExists(theLockFile)) continue;
+                final Path freshnessFile = Files.exists(theLockFile) ? theLockFile : ownershipMarker;
+                if (System.currentTimeMillis() - Files.getLastModifiedTime(freshnessFile).toMillis() < 10 * 60 * 1000) continue;
 
-                if (System.currentTimeMillis() - Files.getLastModifiedTime(theLockFile).toMillis() < 10 * 60 * 1000) continue;
-
-                try (final FileChannel fileChannel = FileChannel.open(theLockFile, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
-                        final FileLock theLock = fileChannel.tryLock()) {
-                    if (theLock != null) {
-                        LOG.info("Found stale data directory {}", dir);
-                        if (Files.exists(dir.resolve("postmaster.pid"))) {
-                            try {
-                                pgCtl(dir, "stop");
-                                LOG.info("Shut down orphaned postmaster!");
-                            } catch (final Exception e) {
-                                if (LOG.isDebugEnabled()) {
-                                    LOG.warn("Failed to stop postmaster {}", dir, e);
-                                } else {
-                                    LOG.warn("Failed to stop postmaster {}: {}", dir, e.getMessage());
-                                }
-                            }
-                        }
-                        deleteDirectoryRecursively(dir);
+                boolean canDelete = false;
+                if (Files.exists(theLockFile)) {
+                    try (final FileChannel fileChannel = FileChannel.open(theLockFile, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+                         final FileLock theLock = fileChannel.tryLock()) {
+                        if (theLock != null) canDelete = true;
+                    } catch (final OverlappingFileLockException e) {
+                        LOG.trace("While cleaning old data directories", e);
+                        continue;
+                    } catch (final Exception e) {
+                        LOG.warn("While cleaning old data directories", e);
+                        continue;
                     }
-                } catch (final OverlappingFileLockException e) {
-                    LOG.trace("While cleaning old data directories", e);
+                } else {
+                    canDelete = true;
+                }
+
+                if (!canDelete) continue;
+
+                LOG.info("Found stale data directory {}", dir);
+                if (Files.exists(dir.resolve("postmaster.pid"))) {
+                    try {
+                        pgCtl(dir, "stop");
+                        LOG.info("Shut down orphaned postmaster!");
+                    } catch (final Exception e) {
+                        if (LOG.isDebugEnabled()) {
+                            LOG.warn("Failed to stop postmaster {}", dir, e);
+                        } else {
+                            LOG.warn("Failed to stop postmaster {}: {}", dir, e.getMessage());
+                        }
+                    }
+                }
+                try {
+                    deleteDirectoryRecursively(dir);
+                    Files.deleteIfExists(ownershipMarker);
                 } catch (final Exception e) {
                     LOG.warn("While cleaning old data directories", e);
                 }
@@ -445,6 +518,7 @@ public class EmbeddedPostgres implements Closeable {
             throw new RuntimeException(e);
         }
     }
+
 
 
     private static Path getWorkingDirectory() {
@@ -690,7 +764,10 @@ public class EmbeddedPostgres implements Closeable {
          */
         public EmbeddedPostgres start() throws IOException {
             if (builderPort == 0) builderPort = detectFreePort();
-            if (builderDataDirectory == null) builderDataDirectory = Files.createTempDirectory("epg");
+            if (builderDataDirectory == null) {
+                Files.createDirectories(parentDirectory);
+                builderDataDirectory = Files.createTempDirectory(parentDirectory, "epg-");
+            }
             return new EmbeddedPostgres(parentDirectory, builderDataDirectory, builderCleanDataDirectory, builderRegisterShutdownHook, config,
                     localeConfig, builderPort, connectConfig, pgBinaryResolver, errRedirector, outRedirector,
                     pgStartupWait, overrideWorkingDirectory, dataDirectoryCustomizer);
@@ -765,7 +842,7 @@ public class EmbeddedPostgres implements Closeable {
         }
     }
 
-    private static void mkdirs(final Path dir) {
+    private static void makeDirectories(final Path dir) {
         try {
             Files.createDirectories(dir);
         } catch (final IOException e) {
@@ -834,7 +911,7 @@ public class EmbeddedPostgres implements Closeable {
                     final byte[] content = new byte[(int) entry.getSize()];
                     final int read = tarIn.read(content, 0, content.length);
                     if (read == -1) throw new IllegalStateException("could not read " + individualFile);
-                    mkdirs(fsObject.getParent());
+                    makeDirectories(fsObject.getParent());
 
                     final AsynchronousFileChannel fileChannel = AsynchronousFileChannel.open(fsObject, CREATE, WRITE);
                     final ByteBuffer buffer = ByteBuffer.wrap(content);
@@ -863,7 +940,7 @@ public class EmbeddedPostgres implements Closeable {
                         }
                     });
                 } else if (entry.isDirectory()) {
-                    mkdirs(fsObject);
+                    makeDirectories(fsObject);
                 } else {
                     throw new UnsupportedOperationException(String.format("Unsupported entry found: %s", individualFile));
                 }
@@ -910,14 +987,14 @@ public class EmbeddedPostgres implements Closeable {
             }
 
             try (final DigestInputStream pgArchiveData = new DigestInputStream(pgBinary, MessageDigest.getInstance("SHA-512"));
-                    final ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
-                pgArchiveData.transferTo(baos);
+                 final ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream()) {
+                pgArchiveData.transferTo(byteArrayOutputStream);
 
                 final String pgDigest = HexFormat.of().formatHex(pgArchiveData.getMessageDigest().digest());
                 final Path workingDirectory = Optional.ofNullable(overrideWorkingDirectory).orElse(getWorkingDirectory());
                 pgDir = workingDirectory.resolve(String.format("PG-%s", pgDigest));
 
-                mkdirs(pgDir);
+                makeDirectories(pgDir);
 
                 final FileStore store = Files.getFileStore(workingDirectory);
                 if (store.supportsFileAttributeView(PosixFileAttributeView.class)) {
@@ -938,7 +1015,7 @@ public class EmbeddedPostgres implements Closeable {
                             final FileLock unpackLock = fileChannel.tryLock()) {
                         if (unpackLock != null) {
                             LOG.info("Extracting Postgres...");
-                            try (final ByteArrayInputStream bais = new ByteArrayInputStream(baos.toByteArray())) {
+                            try (final ByteArrayInputStream bais = new ByteArrayInputStream(byteArrayOutputStream.toByteArray())) {
                                 extractTxz(bais, pgDir);
                             }
                             if (Files.notExists(pgDirExists)) {
