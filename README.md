@@ -1,93 +1,81 @@
 # Embedded Postgres
+
 [![Maven Central](https://img.shields.io/maven-central/v/com.smushytaco/embedded-postgres.svg?label=maven%20central)](https://central.sonatype.com/artifact/com.smushytaco/embedded-postgres)
 [![Dokka Docs](https://img.shields.io/badge/docs-dokka-brightgreen.svg)](https://smushytaco.github.io/embedded-postgres)
 [![Javadocs](https://javadoc.io/badge2/com.smushytaco/embedded-postgres/javadoc.svg)](https://javadoc.io/doc/com.smushytaco/embedded-postgres)
 
-## Introduction
+`embedded-postgres` runs real PostgreSQL binaries directly on the host machine for fast, isolated tests without Docker.
 
-This project is a fork of [Zonkyio Embedded PostgreSQL](https://github.com/zonkyio/embedded-postgres) which is a fork of [OpenTable Embedded PostgreSQL Component](https://github.com/opentable/otj-pg-embedded) created back in 2018. The original
-project continues, but with a very different philosophy - wrapping the postgres instance in a docker container.
-Whereas this project follows the original approach of using native postgres binaries running directly on the target platform without the overhead of virtualization.
+This project is a modern fork of the original [OpenTable](https://github.com/opentable/otj-pg-embedded) / [Zonky](https://github.com/zonkyio/embedded-postgres) embedded PostgreSQL line. It keeps the native-binary approach, targets modern Java, uses `Path`-based APIs, provides JUnit 6 extensions, supports schema preparation via Flyway or Liquibase, and includes more explicit lifecycle and cleanup controls for prepared clusters.
 
-This fork also differs from the Zonkyio fork in the sense that it depends on the latest LTS version of Java, migrates from the legacy `File` to the modern `Path`, has full javadoc coverage, drops no longer needed dependencies, and drops legacy JUnit 4 support. Think of this as a comprehensive modernization.
+## Why this fork
 
-The library allows embedding PostgreSQL into Java application code with no external dependencies.
-Excellent for allowing you to unit test with a "real" Postgres without requiring end users to install and set up a database cluster.
+Compared with older forks, this project focuses on:
+
+- modern Java-first APIs
+- `Path` instead of legacy `File`
+- full Javadoc coverage
+- JUnit 6 support
+- native PostgreSQL binaries instead of Docker
+- improved prepared-cluster lifecycle management
+- better stale-directory cleanup behavior on long-lived JVMs and Windows
 
 ## Features
 
-* All features of `com.opentable:otj-pg-embedded:0.13.3`
-* Configurable version of [PostgreSQL binaries](https://github.com/zonkyio/embedded-postgres-binaries)
-* PostgreSQL 11+ support even for Linux platform
-* Support for running inside Docker, including Alpine Linux
+- starts real PostgreSQL binaries on the target platform
+- supports direct use through `EmbeddedPostgres`
+- supports JUnit 6 extensions for both single-instance and prepared-database workflows
+- supports deterministic database preparation through `DatabasePreparer`
+- supports `DatabaseConnectionPreparer` for direct JDBC-connection-based setup
+- built-in Flyway integration through `FlywayPreparer`
+- built-in Liquibase integration through `LiquibasePreparer`
+- configurable prepared-cluster retention via `ClusterRetentionPolicy`
+- explicit global cleanup through `PreparedDbProvider.closeAll()`
+- custom binary resolution via `PgBinaryResolver`
+- configurable server settings, locale settings, connection properties, startup timeout, redirects, working directory, data directory, and shutdown hook behavior
+- sidecar ownership markers for safer stale-directory cleanup
 
-## Gradle Configuration
+## Installation
 
+### Gradle
 
-To use this with Gradle, add the following to your `build.gradle.kts`:
+Add the library to your test dependencies.
+
 ```kotlin
 dependencies {
     testImplementation(libs.embeddedPostgres)
 }
 ```
-And the following to your `gradle/libs.versions.toml`:
+
+`gradle/libs.versions.toml`:
+
 ```toml
 [versions]
 # Check this on https://central.sonatype.com/artifact/com.smushytaco/embedded-postgres/
-embeddedPostgres = "3.1.0"
+embeddedPostgres = "4.0.0"
 
 [libraries]
 embeddedPostgres = { group = "com.smushytaco", name = "embedded-postgres", version.ref = "embeddedPostgres" }
 ```
 
-The default version of the embedded postgres is `PostgreSQL 18.3.0`, but you can change it by following the instructions described in [Postgres version](#postgres-version).
+Check Maven Central for the latest version.
 
-## Basic Usage
+## PostgreSQL binaries
 
-In your JUnit test just add:
+By default, the library uses Zonky's embedded PostgreSQL binary artifacts and resolves them through `DefaultPostgresBinaryResolver`.
 
-```java
-@RegisterExtension
-final SingleInstancePostgresExtension pg = EmbeddedPostgresExtension.singleInstance();
-```
+The default embedded PostgreSQL binary version can be changed independently of the library version by importing the binaries BOM.
 
-This simply has JUnit manage an instance of EmbeddedPostgres (start, stop). You can then use this to get a DataSource with: `pg.getEmbeddedPostgres().getPostgresDatabase();`  
+### Gradle BOM example
 
-Additionally, you may use the [`EmbeddedPostgres`](src/main/java/com/smushytaco/postgres/embedded/EmbeddedPostgres.java) class directly by manually starting and stopping the instance; see [`EmbeddedPostgresTest`](src/test/java/com/smushytaco/postgres/embedded/EmbeddedPostgresTest.java) for an example.
-
-Default username/password is: postgres/postgres and the default database is 'postgres'
-
-## Migrators (Flyway or Liquibase)
-
-You can easily integrate Flyway or Liquibase database schema migration:
-##### Flyway
-```java
-@RegisterExtension
-final PreparedDbExtension db = EmbeddedPostgresExtension.preparedDatabase(FlywayPreparer.forClasspathLocation("db/my-db-schema"));
-```
-
-##### Liquibase
-```java
-@RegisterExtension
-final PreparedDbExtension db = EmbeddedPostgresExtension.preparedDatabase(LiquibasePreparer.forClasspathLocation("liqui/master.xml"));
-```
-
-This will create an independent database for every test with the given schema loaded from the classpath.
-Database templates are used so the time cost is relatively small, given the superior isolation truly
-independent databases gives you.
-
-## Postgres version
-
-The default version of the embedded postgres is `PostgreSQL 18.3.0`, but it can be changed by importing `embedded-postgres-binaries-bom`.
-
-Add the following to your `build.gradle.kts`;
 ```kotlin
 dependencies {
     testImplementation(enforcedPlatform(libs.postgresql))
 }
 ```
 
-And the following to your `gradle/libs.versions.toml`:
+`gradle/libs.versions.toml`:
+
 ```toml
 [versions]
 # Check this on https://central.sonatype.com/artifact/io.zonky.test.postgres/embedded-postgres-binaries-bom/
@@ -97,97 +85,386 @@ postgresql = "18.3.0"
 postgresql = { group = "io.zonky.test.postgres", name = "embedded-postgres-binaries-bom", version.ref = "postgresql" }
 ```
 
-A list of all available versions of postgres binaries can be found [here](https://central.sonatype.com/artifact/io.zonky.test.postgres/embedded-postgres-binaries-bom/).
+Available binary versions:
 
-Note that the release cycle of the postgres binaries is independent of the release cycle of this library, so you can upgrade to a new version of postgres binaries immediately after it is released.
+- BOM: <https://central.sonatype.com/artifact/io.zonky.test.postgres/embedded-postgres-binaries-bom>
+- Binary artifacts namespace: <https://central.sonatype.com/namespace/io.zonky.test.postgres>
 
 ## Additional architectures
 
-By default, only the support for `amd64` architecture is enabled.
-Support for other architectures can be enabled by adding the corresponding Maven dependencies as shown in the example below:
+By default, only the common architecture dependency is typically present in a project. Additional binary artifacts can be added explicitly as needed.
 
-Add the following to your `build.gradle.kts`;
+Example:
+
 ```kotlin
 dependencies {
-    testImplementation(libs.embeddedPostgresBinaries.linux.i386)
+    testImplementation(libs.embeddedPostgresBinariesLinuxI386)
 }
 ```
 
-And the following to your `gradle/libs.versions.toml`:
+`gradle/libs.versions.toml`:
+
 ```toml
 [libraries]
-embeddedPostgresBinaries-linux-i386 = { group = "io.zonky.test.postgres", name = "embedded-postgres-binaries-linux-i386" }
+embeddedPostgresBinariesLinuxI386 = { group = "io.zonky.test.postgres", name = "embedded-postgres-binaries-linux-i386" }
 ```
 
-**Supported platforms:** `Darwin`, `Windows`, `Linux`, `Alpine Linux`  
-**Supported architectures:** `amd64`, `i386`, `arm32v6`, `arm32v7`, `arm64v8`, `ppc64le`
+Typical supported platforms and architectures are provided by the binary artifacts, not by this library alone. Check the binary artifact namespace for the exact list available for a given PostgreSQL version.
 
-Note that not all architectures are supported by all platforms, look [here](https://central.sonatype.com/namespace/io.zonky.test.postgres/) for an exhaustive list of all available artifacts.
-  
-Since `PostgreSQL 10.0`, there are additional artifacts with `alpine-lite` suffix. These artifacts contain postgres binaries for Alpine Linux with disabled [ICU support](https://blog.2ndquadrant.com/icu-support-postgresql-10/) for further size reduction.
+## Basic usage
+
+### Direct usage
+
+Use `EmbeddedPostgres` directly when you want full control over startup and shutdown.
+
+```java
+try (EmbeddedPostgres pg = EmbeddedPostgres.start();
+     Connection connection = pg.getPostgresDatabase().getConnection();
+     Statement statement = connection.createStatement();
+     ResultSet resultSet = statement.executeQuery("SELECT 1")) {
+    resultSet.next();
+    System.out.println(resultSet.getInt(1));
+}
+```
+
+Useful methods include:
+
+- `EmbeddedPostgres.start()`
+- `EmbeddedPostgres.builder()`
+- `getPostgresDatabase()`
+- `getTemplateDatabase()`
+- `getDatabase(user, dbName)`
+- `getJdbcUrl(user, dbName)`
+- `getPort()`
+
+## Builder customization
+
+`EmbeddedPostgres.builder()` supports low-level customization before startup.
+
+Examples include:
+
+```java
+EmbeddedPostgres pg = EmbeddedPostgres.builder()
+        .setPort(5433)
+        .setPGStartupWait(Duration.ofSeconds(20))
+        .setServerConfig("max_connections", "100")
+        .setLocaleConfig("locale", "en_US.UTF-8")
+        .setConnectConfig("connectTimeout", "20")
+        .setRegisterShutdownHook(true)
+        .start();
+```
+
+Available builder options include:
+
+- `setPGStartupWait(Duration)`
+- `setCleanDataDirectory(boolean)`
+- `setRegisterShutdownHook(boolean)`
+- `setDataDirectory(Path)`
+- `setServerConfig(String, String)`
+- `setLocaleConfig(String, String)`
+- `setConnectConfig(String, String)`
+- `setOverrideWorkingDirectory(Path)`
+- `setPort(int)`
+- `setErrorRedirector(ProcessBuilder.Redirect)`
+- `setOutputRedirector(ProcessBuilder.Redirect)`
+- `setPgBinaryResolver(PgBinaryResolver)`
+- `setDataDirectoryCustomizer(Consumer<Path>)`
+
+## JUnit 6 support
+
+The library ships with two JUnit 6 extensions.
+
+### Single instance extension
+
+Use this when you want an `EmbeddedPostgres` instance managed for you.
+
+```java
+@RegisterExtension
+final SingleInstancePostgresExtension pg = EmbeddedPostgresExtension.singleInstance();
+```
+
+Then access the running server with:
+
+```java
+DataSource dataSource = pg.getEmbeddedPostgres().getPostgresDatabase();
+```
+
+You can also customize the underlying builder:
+
+```java
+@RegisterExtension
+final SingleInstancePostgresExtension pg = EmbeddedPostgresExtension.singleInstance()
+        .customize(builder -> builder.setPGStartupWait(Duration.ofSeconds(20)));
+```
+
+Behavior depends on how the extension is registered:
+
+- `static @RegisterExtension`: one embedded PostgreSQL instance per test class
+- non-static `@RegisterExtension`: one embedded PostgreSQL instance per test method
+
+### Prepared database extension
+
+Use this when each test should get its own fresh database cloned from a prepared template cluster.
+
+```java
+@RegisterExtension
+final PreparedDbExtension db = EmbeddedPostgresExtension.preparedDatabase(_ -> {});
+```
+
+Access helpers:
+
+- `getTestDatabase()` returns the current test `DataSource`
+- `getConnectionInfo()` returns database name, port, user, and connection properties
+- `getDbProvider()` returns the underlying `PreparedDbProvider`
+
+Example:
+
+```java
+@RegisterExtension
+final PreparedDbExtension db = EmbeddedPostgresExtension.preparedDatabase(connection -> {
+    try (PreparedStatement statement = connection.prepareStatement("CREATE TABLE sample (id int)")) {
+        statement.execute();
+    }
+});
+```
+
+You can customize the builder and the cluster retention policy:
+
+```java
+@RegisterExtension
+final PreparedDbExtension db = EmbeddedPostgresExtension.preparedDatabase(_ -> {})
+        .customize(builder -> builder.setPGStartupWait(Duration.ofSeconds(20)))
+        .setClusterRetentionPolicy(ClusterRetentionPolicy.CLOSE_ON_LAST_RELEASE);
+```
+
+Behavior depends on registration style:
+
+- `static @RegisterExtension`: one prepared state per test class
+- non-static `@RegisterExtension`: one prepared state per test method
+
+## Database preparers
+
+### `DatabasePreparer`
+
+Implement `DatabasePreparer` when you want to prepare a database through a `DataSource`.
+
+```java
+DatabasePreparer preparer = dataSource -> {
+    try (Connection connection = dataSource.getConnection();
+         Statement statement = connection.createStatement()) {
+        statement.execute("CREATE TABLE sample (id int)");
+    }
+};
+```
+
+Preparation must be deterministic because prepared clusters may be cached and reused based on equality semantics.
+
+### `DatabaseConnectionPreparer`
+
+Implement `DatabaseConnectionPreparer` when you prefer direct access to a JDBC `Connection`.
+
+```java
+DatabaseConnectionPreparer preparer = connection -> {
+    try (Statement statement = connection.createStatement()) {
+        statement.execute("CREATE TABLE sample (id int)");
+    }
+};
+```
+
+## Prepared database provider
+
+`PreparedDbProvider` is the low-level API behind `PreparedDbExtension`.
+
+It can be used directly when you want prepared template clusters without JUnit.
+
+```java
+PreparedDbProvider provider = PreparedDbProvider.forPreparer(connection -> {
+    try (Statement statement = connection.createStatement()) {
+        statement.execute("CREATE TABLE sample (id int)");
+    }
+});
+
+try {
+    ConnectionInfo info = provider.createNewDatabase();
+    DataSource dataSource = provider.createDataSourceFromConnectionInfo(info);
+    // use the database
+} finally {
+    provider.close();
+}
+```
+
+Key methods:
+
+- `forPreparer(preparer)`
+- `forPreparer(preparer, retentionPolicy)`
+- `forPreparer(preparer, customizers)`
+- `forPreparer(preparer, customizers, retentionPolicy)`
+- `createDatabase()`
+- `createNewDatabase()`
+- `createDataSource()`
+- `createDataSourceFromConnectionInfo(...)`
+- `getConfigurationTweak(...)`
+- `close()`
+- `closeAll()`
+
+### Cluster retention policy
+
+Prepared clusters use explicit lifecycle control.
+
+`ClusterRetentionPolicy` supports:
+
+- `CLOSE_ON_LAST_RELEASE` — close the prepared cluster as soon as the last provider handle is released
+- `KEEP_UNTIL_CLOSE_ALL` — keep prepared clusters cached until `PreparedDbProvider.closeAll()` is called
+
+The default retention policy is `KEEP_UNTIL_CLOSE_ALL`.
+
+This is useful when you want to trade memory / process lifetime for faster repeated prepared-database creation.
+
+If you are running tests in a long-lived JVM or custom runner, call `PreparedDbProvider.closeAll()` at the end of the run to explicitly tear down retained prepared clusters.
+
+## Flyway integration
+
+Use `FlywayPreparer` to prepare a template cluster from Flyway migrations.
+
+### Classpath locations
+
+```java
+@RegisterExtension
+final PreparedDbExtension db = EmbeddedPostgresExtension.preparedDatabase(
+        FlywayPreparer.forClasspathLocation("db/migration")
+);
+```
+
+### Custom Flyway configuration
+
+```java
+Map<String, String> configuration = Map.of(
+        "flyway.locations", "classpath:db/migration"
+);
+
+PreparedDbProvider provider = PreparedDbProvider.forPreparer(
+        FlywayPreparer.fromConfiguration(configuration)
+);
+```
+
+## Liquibase integration
+
+Use `LiquibasePreparer` to prepare a template cluster from Liquibase changelogs.
+
+### Classpath changelog
+
+```java
+@RegisterExtension
+final PreparedDbExtension db = EmbeddedPostgresExtension.preparedDatabase(
+        LiquibasePreparer.forClasspathLocation("liqui/master.xml")
+);
+```
+
+### Classpath changelog with contexts
+
+```java
+@RegisterExtension
+final PreparedDbExtension db = EmbeddedPostgresExtension.preparedDatabase(
+        LiquibasePreparer.forClasspathLocation("liqui/master-test.xml", new Contexts("test"))
+);
+```
+
+### File-based changelog
+
+```java
+PreparedDbProvider provider = PreparedDbProvider.forPreparer(
+        LiquibasePreparer.forFile(Path.of("src/test/resources/liqui/master.xml"))
+);
+```
+
+## Binary resolution
+
+If the default binary resolution is not enough, provide your own `PgBinaryResolver`.
+
+```java
+EmbeddedPostgres pg = EmbeddedPostgres.builder()
+        .setPgBinaryResolver((system, architecture) -> {
+            // return an InputStream for the correct archive
+            throw new UnsupportedOperationException();
+        })
+        .start();
+```
+
+`DefaultPostgresBinaryResolver` resolves binaries from the classpath using operating system, architecture, and Linux distribution information.
+
+## Cleanup and working directories
+
+The library keeps extracted PostgreSQL binaries under a working directory and manages data directories separately.
+
+- default working directory: `${java.io.tmpdir}/embedded-pg`
+- override with system property: `ot.epg.working-dir`
+- data-directory cleanup is controlled by `setCleanDataDirectory(boolean)`
+
+The library also uses sidecar ownership marker files to safely identify stale embedded-postgres data directories and clean them up on later startups.
 
 ## Troubleshooting
 
-### Process [/tmp/embedded-pg/PG-XYZ/bin/initdb, ...] failed
+### `initdb` or server startup fails
 
-Try to clean up the `/tmp/embedded-pg/PG-XYZ` directory containing temporary binaries of the embedded database. 
+If startup fails with an `initdb` or `pg_ctl` error:
 
-### Running tests on Windows does not work
+- verify that the correct binary artifacts for your platform are on the classpath
+- verify that the working directory is writable
+- verify that the data directory or its parent is writable
+- on Linux containers, verify the user is not root unless your environment explicitly supports it
+- if needed, set locale values with `setLocaleConfig(...)`
 
-You probably need to install [Microsoft Visual C++ 2013 Redistributable Package](https://support.microsoft.com/en-us/help/3179560/update-for-visual-c-2013-and-visual-c-redistributable-package). The version 2013 is important, installation of other versions will not help. More detailed is the problem discussed [here](https://github.com/opentable/otj-pg-embedded/issues/65).
+### Windows
 
-### Running tests in Docker does not work
+On Windows, the PostgreSQL binaries may require the Microsoft Visual C++ 2013 Redistributable Package.
 
-Running builds inside a Docker container is fully supported, including Alpine Linux. However, PostgreSQL has a restriction the database process must run under a non-root user. Otherwise, the database does not start and fails with an error.  
+### Docker and containers
 
-Below are some examples of how to prepare a docker image running with a non-root user:
+This library runs native PostgreSQL binaries and does not wrap PostgreSQL in Docker itself.
 
-<details>
-  <summary>Standard Dockerfile</summary>
-  
-  ```dockerfile
-  FROM openjdk:8-jdk
-  
-  RUN groupadd --system --gid 1000 test
-  RUN useradd --system --gid test --uid 1000 --shell /bin/bash --create-home test
-  
-  USER test
-  WORKDIR /home/test
-  ```
+When running tests inside a container:
 
-</details>
+- prefer a non-root user
+- ensure the container filesystem is writable
+- ensure required locales are available
+- on Linux, `unshare` support is detected automatically when applicable
 
-<details>
-  <summary>Alpine Dockerfile</summary>
-  
-  ```dockerfile
-  FROM openjdk:8-jdk-alpine
-  
-  RUN addgroup -S -g 1000 test
-  RUN adduser -D -S -G test -u 1000 -s /bin/ash test
-  
-  USER test
-  WORKDIR /home/test
-  ```
+### Long-lived JVMs
 
-</details>
+If your test runner keeps the JVM alive between runs, retained prepared clusters may also remain alive until explicitly closed. In those environments, call:
 
-<details>
-  <summary>Gitlab runner Docker executor</summary>
+```java
+PreparedDbProvider.closeAll();
+```
 
-  Configure Docker container to run in privileged mode as described [here](https://docs.gitlab.com/runner/executors/docker.html#use-docker-in-docker-with-privileged-mode).
+at end-of-run cleanup.
 
-  ```
-  [[runners]]
-    executor = "docker"
-    [runners.docker]
-      privileged = true
-  ```
+## API summary
 
-</details>
+Main embedded API:
 
+- `EmbeddedPostgres`
+- `EmbeddedPostgres.Builder`
+- `PgBinaryResolver`
+- `DefaultPostgresBinaryResolver`
+- `ConnectionInfo`
 
-If the above do not resolve your error, verify that the correct locales are available in your container. For example, many variants of AlmaLinux:9 do not come with `glibc-langpack-en`. This will lead to misleading errors during `initdb`. Additionally, you can optionally set your locale with `setLocaleConfig()` when building your EmbeddedPostgres instance.
+Preparation API:
+
+- `DatabasePreparer`
+- `DatabaseConnectionPreparer`
+- `PreparedDbProvider`
+- `ClusterRetentionPolicy`
+- `DbInfo`
+- `FlywayPreparer`
+- `LiquibasePreparer`
+
+JUnit 6 API:
+
+- `EmbeddedPostgresExtension`
+- `SingleInstancePostgresExtension`
+- `PreparedDbExtension`
 
 ## License
-The project is released under version 2.0 of the [Apache License](https://www.apache.org/licenses/LICENSE-2.0).
+
+Apache 2.0 — see the [LICENSE](LICENSE) file for details.

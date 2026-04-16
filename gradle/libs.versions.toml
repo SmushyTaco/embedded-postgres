@@ -22,7 +22,7 @@ embeddedPostgresBinaries = "18.3.0"
 # Check this on https://central.sonatype.com/artifact/org.apache.commons/commons-compress/
 commonsCompress = "1.28.0"
 # Check this on https://central.sonatype.com/artifact/org.flywaydb/flyway-database-postgresql/
-flyway = "12.3.0"
+flyway = "12.4.0"
 # Check this on https://central.sonatype.com/artifact/org.junit.jupiter/junit-jupiter-api/
 junit = "6.0.3"
 # Check this on https://central.sonatype.com/artifact/org.liquibase/liquibase-core/
