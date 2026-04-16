@@ -767,7 +767,6 @@ public class EmbeddedPostgres implements Closeable {
             if (builderPort == 0) builderPort = detectFreePort();
             if (builderDataDirectory == null) {
                 Files.createDirectories(parentDirectory);
-                builderDataDirectory = Files.createTempDirectory(parentDirectory, "epg-");
                 builderDataDirectory = parentDirectory.resolve("epg-" + UUID.randomUUID());
             }
             return new EmbeddedPostgres(parentDirectory, builderDataDirectory, builderCleanDataDirectory, builderRegisterShutdownHook, config,
