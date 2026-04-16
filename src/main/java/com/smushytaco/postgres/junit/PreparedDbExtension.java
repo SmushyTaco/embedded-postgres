@@ -16,10 +16,7 @@
 
 package com.smushytaco.postgres.junit;
 
-import com.smushytaco.postgres.embedded.ConnectionInfo;
-import com.smushytaco.postgres.embedded.DatabasePreparer;
-import com.smushytaco.postgres.embedded.EmbeddedPostgres;
-import com.smushytaco.postgres.embedded.PreparedDbProvider;
+import com.smushytaco.postgres.embedded.*;
 import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.extension.*;
 
@@ -42,6 +39,7 @@ public class PreparedDbExtension implements BeforeAllCallback, AfterAllCallback,
 
     private final DatabasePreparer preparer;
     private final List<Consumer<EmbeddedPostgres.Builder>> builderCustomizers = new CopyOnWriteArrayList<>();
+    private ClusterRetentionPolicy clusterRetentionPolicy = ClusterRetentionPolicy.KEEP_UNTIL_CLOSE_ALL;
 
     private final AtomicBoolean started = new AtomicBoolean(false);
 
@@ -66,6 +64,24 @@ public class PreparedDbExtension implements BeforeAllCallback, AfterAllCallback,
     public PreparedDbExtension customize(final Consumer<EmbeddedPostgres.Builder> customizer) {
         if (started.get()) throw new AssertionError("already started");
         builderCustomizers.add(customizer);
+        return this;
+    }
+
+    /**
+     * Sets the retention policy used for shared prepared clusters created by
+     * this extension.
+     * <p>
+     * The retention policy controls what happens to the backing prepared
+     * cluster after the last provider handle has been released.
+     *
+     * @param clusterRetentionPolicy the retention policy to use for shared prepared clusters
+     * @return this {@link PreparedDbExtension} instance for method chaining
+     * @throws AssertionError if the extension has already been started
+     */
+    @SuppressWarnings("unused")
+    public PreparedDbExtension setClusterRetentionPolicy(final ClusterRetentionPolicy clusterRetentionPolicy) {
+        if (started.get()) throw new AssertionError("already started");
+        this.clusterRetentionPolicy = clusterRetentionPolicy;
         return this;
     }
 
@@ -150,7 +166,7 @@ public class PreparedDbExtension implements BeforeAllCallback, AfterAllCallback,
     }
 
     private State createState() throws SQLException {
-        final PreparedDbProvider provider = PreparedDbProvider.forPreparer(preparer, builderCustomizers);
+        final PreparedDbProvider provider = PreparedDbProvider.forPreparer(preparer, builderCustomizers, clusterRetentionPolicy);
         final ConnectionInfo connectionInfo = provider.createNewDatabase();
         return new State(provider, connectionInfo, provider.createDataSourceFromConnectionInfo(connectionInfo));
     }

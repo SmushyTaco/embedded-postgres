@@ -61,7 +61,20 @@ public class PreparedDbProvider implements AutoCloseable {
      */
     @SuppressWarnings("unused")
     public static PreparedDbProvider forPreparer(final DatabasePreparer preparer) {
-        return forPreparer(preparer, Collections.emptyList());
+        return forPreparer(preparer, Collections.emptyList(), ClusterRetentionPolicy.KEEP_UNTIL_CLOSE_ALL);
+    }
+
+    /**
+     * Creates a {@link PreparedDbProvider} for the given {@link DatabasePreparer}
+     * with no additional customizations and the specified cluster retention policy.
+     *
+     * @param preparer the database preparer used to initialize the template cluster
+     * @param retentionPolicy the retention policy controlling cluster lifetime after the last release
+     * @return a new {@link PreparedDbProvider} instance
+     */
+    @SuppressWarnings("unused")
+    public static PreparedDbProvider forPreparer(final DatabasePreparer preparer, final ClusterRetentionPolicy retentionPolicy) {
+        return forPreparer(preparer, Collections.emptyList(), retentionPolicy);
     }
 
     /**
@@ -73,13 +86,27 @@ public class PreparedDbProvider implements AutoCloseable {
      * @param customizers customizations to apply to the {@link EmbeddedPostgres.Builder}
      * @return a new {@link PreparedDbProvider} instance
      */
+    @SuppressWarnings("unused")
     public static PreparedDbProvider forPreparer(final DatabasePreparer preparer, final Iterable<Consumer<Builder>> customizers) {
-        return new PreparedDbProvider(preparer, customizers);
+        return forPreparer(preparer, customizers, ClusterRetentionPolicy.KEEP_UNTIL_CLOSE_ALL);
     }
 
-    private PreparedDbProvider(final DatabasePreparer preparer, final Iterable<Consumer<Builder>> customizers) {
+    /**
+     * Creates a {@link PreparedDbProvider} for the given {@link DatabasePreparer},
+     * customizers, and cluster retention policy.
+     *
+     * @param preparer the database preparer used to initialize the template cluster
+     * @param customizers customizations to apply to the {@link EmbeddedPostgres.Builder}
+     * @param retentionPolicy the retention policy controlling cluster lifetime after the last release
+     * @return a new {@link PreparedDbProvider} instance
+     */
+    public static PreparedDbProvider forPreparer(final DatabasePreparer preparer, final Iterable<Consumer<Builder>> customizers, final ClusterRetentionPolicy retentionPolicy) {
+        return new PreparedDbProvider(preparer, customizers, retentionPolicy);
+    }
+
+    private PreparedDbProvider(final DatabasePreparer preparer, final Iterable<Consumer<Builder>> customizers, final ClusterRetentionPolicy retentionPolicy) {
         try {
-            sharedCluster = CLUSTER_MANAGER.acquireCluster(preparer, customizers);
+            sharedCluster = CLUSTER_MANAGER.acquireCluster(preparer, customizers, retentionPolicy);
         } catch (final IOException | SQLException e) {
             throw new RuntimeException(e);
         }
@@ -190,8 +217,9 @@ public class PreparedDbProvider implements AutoCloseable {
     /**
      * Releases this provider's handle to the shared prepared cluster.
      * <p>
-     * When the last provider referencing the cluster is closed, the underlying
-     * preparer pipeline and embedded PostgreSQL instance are also closed.
+     * Depending on the configured retention policy, closing the last provider
+     * referencing the cluster may either close the underlying cluster immediately
+     * or leave it cached until {@link #closeAll()} is called.
      *
      * @throws IOException if the underlying cluster cannot be closed cleanly
      */
@@ -199,6 +227,16 @@ public class PreparedDbProvider implements AutoCloseable {
     public void close() throws IOException {
         if (closed.getAndSet(true)) return;
         CLUSTER_MANAGER.release(sharedCluster);
+    }
+
+    /**
+     * Closes all managed prepared clusters, regardless of whether they are
+     * currently active or idle.
+     *
+     * @throws IOException if one or more clusters fail to close cleanly
+     */
+    public static void closeAll() throws IOException {
+        CLUSTER_MANAGER.closeAll();
     }
 
     private void ensureOpen() {
@@ -217,12 +255,13 @@ public class PreparedDbProvider implements AutoCloseable {
          *
          * @param preparer the preparer used to initialize the cluster template
          * @param customizers customizations to apply to the embedded Postgres builder
+         * @param retentionPolicy the retention policy controlling cluster lifetime after the last release
          * @return a shared cluster for the given preparer configuration
          * @throws IOException if the embedded PostgreSQL instance cannot be started or closed cleanly on failure
          * @throws SQLException if the preparer fails while initializing the template database
          */
-        private synchronized SharedCluster acquireCluster(final DatabasePreparer preparer, final Iterable<Consumer<Builder>> customizers) throws IOException, SQLException {
-            final ClusterKey key = new ClusterKey(preparer, customizers);
+        private synchronized SharedCluster acquireCluster(final DatabasePreparer preparer, final Iterable<Consumer<Builder>> customizers, final ClusterRetentionPolicy retentionPolicy) throws IOException, SQLException {
+            final ClusterKey key = new ClusterKey(preparer, customizers, retentionPolicy);
             final SharedCluster existing = clusters.get(key);
             if (existing != null) {
                 existing.acquire();
@@ -234,7 +273,7 @@ public class PreparedDbProvider implements AutoCloseable {
             final EmbeddedPostgres pg = builder.start();
             try {
                 preparer.prepare(pg.getTemplateDatabase());
-            } catch (SQLException | RuntimeException e) {
+            } catch (final SQLException | RuntimeException e) {
                 try {
                     pg.close();
                 } catch (final IOException closeException) {
@@ -242,7 +281,7 @@ public class PreparedDbProvider implements AutoCloseable {
                 }
                 throw e;
             }
-            final SharedCluster created = new SharedCluster(key, new PrepPipeline(pg).start());
+            final SharedCluster created = new SharedCluster(key, new PrepPipeline(pg).start(), retentionPolicy);
             clusters.put(key, created);
             return created;
         }
@@ -256,7 +295,8 @@ public class PreparedDbProvider implements AutoCloseable {
         private void release(final SharedCluster sharedCluster) throws IOException {
             final SharedCluster clusterToClose;
             synchronized (this) {
-                if (sharedCluster.release() == 0) {
+                final int remainingReferences = sharedCluster.release();
+                if (remainingReferences == 0 && sharedCluster.getRetentionPolicy() == ClusterRetentionPolicy.CLOSE_ON_LAST_RELEASE) {
                     clusters.remove(sharedCluster.getKey(), sharedCluster);
                     clusterToClose = sharedCluster;
                 } else {
@@ -266,6 +306,34 @@ public class PreparedDbProvider implements AutoCloseable {
 
             if (clusterToClose != null) clusterToClose.close();
         }
+
+        /**
+         * Closes every managed shared cluster and clears the cache.
+         *
+         * @throws IOException if one or more clusters fail to close cleanly
+         */
+        private void closeAll() throws IOException {
+            final List<SharedCluster> clustersToClose;
+            synchronized (this) {
+                clustersToClose = new ArrayList<>(clusters.values());
+                clusters.clear();
+            }
+
+            IOException failure = null;
+            for (final SharedCluster sharedCluster : clustersToClose) {
+                try {
+                    sharedCluster.close();
+                } catch (final IOException e) {
+                    if (failure == null) {
+                        failure = e;
+                    } else {
+                        failure.addSuppressed(e);
+                    }
+                }
+            }
+
+            if (failure != null) throw failure;
+        }
     }
 
     /**
@@ -274,12 +342,14 @@ public class PreparedDbProvider implements AutoCloseable {
     private static final class SharedCluster implements AutoCloseable {
         private final ClusterKey key;
         private final PrepPipeline preparerPipeline;
+        private final ClusterRetentionPolicy retentionPolicy;
         private int refCount = 1;
         private final AtomicBoolean closed = new AtomicBoolean();
 
-        private SharedCluster(final ClusterKey key, final PrepPipeline preparerPipeline) {
+        private SharedCluster(final ClusterKey key, final PrepPipeline preparerPipeline, final ClusterRetentionPolicy retentionPolicy) {
             this.key = key;
             this.preparerPipeline = preparerPipeline;
+            this.retentionPolicy = retentionPolicy;
         }
 
         private void acquire() {
@@ -288,12 +358,17 @@ public class PreparedDbProvider implements AutoCloseable {
         }
 
         private int release() {
+            if (closed.get()) return 0;
             if (refCount == 0) throw new IllegalStateException("Shared cluster reference count is already zero");
             return --refCount;
         }
 
         private ClusterKey getKey() {
             return key;
+        }
+
+        private ClusterRetentionPolicy getRetentionPolicy() {
+            return retentionPolicy;
         }
 
         private DbInfo getNextDb() throws SQLException {
@@ -309,6 +384,7 @@ public class PreparedDbProvider implements AutoCloseable {
         @Override
         public void close() throws IOException {
             if (closed.getAndSet(true)) return;
+            refCount = 0;
             preparerPipeline.close();
         }
     }
@@ -406,9 +482,9 @@ public class PreparedDbProvider implements AutoCloseable {
         }
     }
 
-    private record ClusterKey(DatabasePreparer preparer, Builder builder) {
-        private ClusterKey(final DatabasePreparer preparer, final Iterable<Consumer<Builder>> customizers) {
-            this(preparer, createBuilder(customizers));
+    private record ClusterKey(DatabasePreparer preparer, Builder builder, ClusterRetentionPolicy retentionPolicy) {
+        private ClusterKey(final DatabasePreparer preparer, final Iterable<Consumer<Builder>> customizers, final ClusterRetentionPolicy retentionPolicy) {
+            this(preparer, createBuilder(customizers), retentionPolicy);
         }
 
         private static Builder createBuilder(final Iterable<Consumer<Builder>> customizers) {
